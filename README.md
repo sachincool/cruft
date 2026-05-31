@@ -1,5 +1,13 @@
-<h1 align="center">C&nbsp;R&nbsp;U&nbsp;F&nbsp;T&nbsp;&nbsp;<sub>░▒▓</sub></h1>
+<h1 align="center">C&nbsp;R&nbsp;U&nbsp;F&nbsp;T</h1>
 <p align="center"><em>decruft your dev laptop.</em></p>
+
+<div align="center">
+<pre>
+ before  ████████████████████████████
+  after  █████████████░░░░░░░░░░░░░░░░
+</pre>
+</div>
+
 <p align="center">one Go binary · 25 cleaners · deletes on confirm · <code>--safe</code> for 7-day undo · macOS</p>
 
 <p align="center">
@@ -69,6 +77,17 @@ Three keys you'll use in the TUI:
 | `space` | toggle the cleaner under the cursor |
 | `?` | what does this cleaner do? |
 | `d` / `s` | flip `--dry-run` / `--safe` mid-session |
+
+### Shell completions
+
+cruft completes both its subcommands and cleaner names — `cruft run <Tab>`
+suggests `npm`, `docker`, `xcode-derived`, and the rest.
+
+```sh
+source <(cruft completion zsh)      # zsh  — add to ~/.zshrc
+source <(cruft completion bash)     # bash — add to ~/.bashrc
+cruft completion fish | source      # fish
+```
 
 ## What it cleans
 
