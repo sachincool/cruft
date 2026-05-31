@@ -3,13 +3,15 @@
 # Install once:  brew install vhs
 # Render:        vhs docs/demo.tape   ->   assets/demo.gif
 #
-# Hold the recording to ~25-30s. Three beats:
-#   1. cruft doctor   — establishes scope, builds trust
-#   2. cruft          — the TUI moment (scan → pick → confirm)
-#   3. cruft glossary — shows the tool teaches itself
+# ~18s, three beats:
+#   1. cruft doctor                    — what's installed / busy / risky
+#   2. cruft gomod pip library-caches  — the TUI: scan, review, confirm
+#   3. cruft glossary safe-mode        — the tool documents itself
 #
-# Everything is --dry-run so nothing on the recording machine actually
-# gets deleted. The summary still shows reclaimable totals.
+# Beat 2 names three cleaners so the scan is instant on any machine —
+# a bare `cruft` scans all 25, and shell-outs like `brew cleanup` make
+# that take 15s+, which is dead air in a recording. Everything is
+# --dry-run, so nothing is deleted while recording.
 
 Output assets/demo.gif
 
@@ -24,9 +26,12 @@ Set Margin 12
 Set MarginFill "#1a1a1a"
 Set Framerate 30
 
-# Quiet shell prompt for the recording — single chevron, no clutter.
+# Clean single-chevron bash prompt. Set while hidden so the PATH line and
+# any shell-startup noise never make it into the recording.
 Hide
-Type "export PS1='%F{green}❯%f '"
+Type "export PATH=$HOME/go/bin:$PATH"
+Enter
+Type `export PS1='\[\e[1;32m\]❯\[\e[0m\] '`
 Enter
 Type "clear"
 Enter
@@ -36,60 +41,52 @@ Show
 Type "cruft doctor"
 Sleep 400ms
 Enter
-Sleep 4s
+Sleep 2500ms
 
 Type "clear"
 Enter
 Sleep 200ms
 
-# --- Beat 2: the TUI ---
-Type "cruft --dry-run"
+# --- Beat 2: the TUI, scoped to three cleaners for a snappy scan ---
+Type "cruft gomod pip library-caches --dry-run"
 Sleep 400ms
 Enter
 
-# Scan animation
-Sleep 3500ms
+# Scan resolves to the select screen.
+Sleep 2200ms
 
-# Browse the list briefly so the viewer sees the cursor + sizes.
+# Move the cursor so the viewer sees navigation and per-cleaner sizes.
 Down
-Sleep 300ms
-Down
-Sleep 300ms
+Sleep 400ms
 Down
 Sleep 600ms
 
-# Open the help panel on the focused cleaner.
+# Open the help panel on the focused cleaner, then dismiss it.
 Type "?"
-Sleep 2200ms
+Sleep 2000ms
+Escape
+Sleep 500ms
 
-# Dismiss help, accept the default selection.
-Space
-Sleep 600ms
+# Confirm, then watch the dry-run execute land on the summary.
 Enter
-Sleep 1500ms
-
-# Confirm screen: hit y, watch the dry-run "execute" complete instantly.
+Sleep 700ms
 Type "y"
-Sleep 2200ms
+Sleep 2600ms
 
-# Summary screen sits long enough for the viewer to read totals.
-Sleep 3000ms
-
-# Quit.
+# Quit from the summary.
 Type "q"
-Sleep 600ms
+Sleep 500ms
 
 Type "clear"
 Enter
 Sleep 200ms
 
-# --- Beat 3: cruft teaches itself ---
+# --- Beat 3: cruft documents itself ---
 Type "cruft glossary safe-mode"
 Sleep 400ms
 Enter
-Sleep 3500ms
+Sleep 2800ms
 
-# End frame.
 Type "clear"
 Enter
-Sleep 800ms
+Sleep 600ms

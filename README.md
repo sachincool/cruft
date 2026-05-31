@@ -18,7 +18,7 @@ You probably have:
 
 - 5 GB of Xcode `DerivedData` from last year
 - 3 GB of old Homebrew formula versions
-- a `.terraform/` for a repo you don't recognise
+- a `.terraform/` and `.terragrunt-cache/` in each of a dozen tiny infra repos you cloned once
 - 1 GB of npm cache from a project you ran twice
 - a JetBrains index for a project you deleted
 
@@ -28,8 +28,15 @@ You probably have:
 
 ## Install
 
+**Homebrew** — recommended:
+
 ```sh
-brew install sachincool/tap/cruft     # macOS, recommended
+brew install sachincool/tap/cruft
+```
+
+**Go** — build from source:
+
+```sh
 go install github.com/sachincool/cruft/cmd/cruft@latest
 ```
 
