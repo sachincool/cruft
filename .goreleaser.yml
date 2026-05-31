@@ -43,11 +43,15 @@ changelog:
       - '^docs:'
       - '^test:'
 
-brews:
+# Homebrew distribution is a cask (not a formula): GoReleaser deprecated
+# `brews` in favour of `homebrew_casks`, and casks are the right shape for
+# a pre-built binary. macOS-only by definition, which matches the project.
+# `brew install sachincool/tap/cruft` and `brew upgrade cruft` both work
+# against the tap below.
+homebrew_casks:
   - name: cruft
     homepage: https://github.com/sachincool/cruft
     description: "Decruft your dev laptop. 25 cleaners, deletes on confirm, --safe for 7-day undo."
-    license: MIT
     repository:
       owner: sachincool
       name: homebrew-tap
@@ -59,10 +63,16 @@ brews:
     commit_author:
       name: goreleaserbot
       email: bot@goreleaser.com
-    install: |
-      bin.install "cruft"
-    test: |
-      assert_match(/\d+\.\d+/, shell_output("#{bin}/cruft version"))
+    # The binary is unsigned (no paid Apple Developer cert). Without this,
+    # Gatekeeper quarantines the download and macOS refuses to run it with
+    # "cruft is damaged and can't be opened". Strip the quarantine bit on
+    # install. Drop this hook if/when the binary gets signed + notarized.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/cruft"]
+          end
     caveats: |
       cruft is macOS-only for now.
         cruft                 # interactive TUI
