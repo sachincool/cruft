@@ -75,7 +75,11 @@ Quick start:
   cruft last                         what was deleted in the last run
   cruft glossary                     define every term cruft uses
   cruft explain <name>               docs for one cleaner (e.g. xcode-derived)`,
-		RunE:          runTUI,
+		RunE: runTUI,
+		// Accept positional cleaner names (e.g. `cruft gomod pip`) and pass
+		// them to runTUI. Without this, cobra rejects any non-subcommand arg
+		// with "unknown command". Subcommands still match first.
+		Args:          cobra.ArbitraryArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -183,11 +187,14 @@ func pickCleaners(args []string) ([]cleaner.Cleaner, error) {
 	return profile.Filter(all, p), nil
 }
 
-func runTUI(_ *cobra.Command, _ []string) error {
+func runTUI(_ *cobra.Command, args []string) error {
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		return fmt.Errorf("not a terminal — try `cruft run --all`")
 	}
-	cleaners, err := pickCleaners(nil)
+	// Positional args scope the TUI to the named cleaners (same resolution
+	// as `cruft run <cleaner>...`). With none, fall back to the --profile
+	// set. Lets `cruft gomod pip` open the picker on just those.
+	cleaners, err := pickCleaners(args)
 	if err != nil {
 		return err
 	}
