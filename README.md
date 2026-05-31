@@ -1,16 +1,12 @@
 <h1 align="center">C&nbsp;R&nbsp;U&nbsp;F&nbsp;T</h1>
 <p align="center"><em>decruft your dev laptop.</em></p>
 
-<div align="center">
-<pre>
-~/Library/Caches   ~/.terraform   ~/.gradle/caches
-~/Library/Developer/Xcode   ~/.cargo   ~/.npm   + a dozen more
-                       │
-                   c  r  u  f  t
-                       │
-     find it all  ·  tick what goes  ·  13.2 GB back
-</pre>
-</div>
+<p align="center">
+  <code>~/Library/Caches</code>&nbsp;&nbsp; <code>~/Library/Developer/Xcode</code>&nbsp;&nbsp; <code>~/.terraform</code>&nbsp;&nbsp; <code>~/.gradle/caches</code><br>
+  <code>~/.cargo</code>&nbsp;&nbsp; <code>~/.npm</code>&nbsp;&nbsp; <code>~/.colima</code>&nbsp;&nbsp; <em>…and a dozen more</em>
+</p>
+
+<p align="center"><b>cruft finds every one, shows you why each is safe to delete, and clears only what you tick.</b></p>
 
 <p align="center">one Go binary · 25 cleaners · deletes on confirm · <code>--safe</code> for 7-day undo · macOS</p>
 
