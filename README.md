@@ -3,8 +3,12 @@
 
 <div align="center">
 <pre>
- before  ████████████████████████████
-  after  █████████████░░░░░░░░░░░░░░░░
+~/Library/Caches   ~/.terraform   ~/.gradle/caches
+~/Library/Developer/Xcode   ~/.cargo   ~/.npm   + a dozen more
+                       │
+                   c  r  u  f  t
+                       │
+     find it all  ·  tick what goes  ·  13.2 GB back
 </pre>
 </div>
 
