@@ -10,6 +10,10 @@ permissions:
 jobs:
   goreleaser:
     runs-on: macos-latest
+    # goreleaser-action@v6 still ships a Node 20 entrypoint; opt into the
+    # Node 24 runtime now so the run is clean ahead of GitHub forcing it.
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     steps:
       - uses: actions/checkout@v5
         with:
@@ -21,7 +25,9 @@ jobs:
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
-          version: latest
+          # Pin to the v2 line rather than `latest`, so a future
+          # goreleaser v3 can't change the build out from under a tag.
+          version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
