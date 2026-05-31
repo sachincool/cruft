@@ -37,7 +37,14 @@ type Model struct {
 	height    int
 	scanDone  int
 	scanTotal int
-	err       error
+	// Live-scan plumbing: cleaners stream their results back over scanCh
+	// as they finish. scanIdx maps a cleaner name to its stable slot in
+	// scanRes so the select view keeps a deterministic order.
+	scanCh      chan runner.ScanResult
+	scanIdx     map[string]int
+	lastScanned string
+	foundBytes  int64
+	err         error
 	// helpFor is the cleaner whose Description is currently shown in
 	// the help overlay (toggled by `?`). nil = panel hidden.
 	helpFor cleaner.Cleaner
@@ -59,9 +66,33 @@ func NewModel(ctx context.Context, r *runner.Runner, cs []cleaner.Cleaner) *Mode
 func (m *Model) Init() tea.Cmd { return m.startScan() }
 
 func (m *Model) startScan() tea.Cmd {
+	// Pre-fill a slot per cleaner so results land in a stable order
+	// regardless of which scanner finishes first.
+	m.scanRes = make([]runner.ScanResult, len(m.cleaners))
+	m.scanIdx = make(map[string]int, len(m.cleaners))
+	for i, c := range m.cleaners {
+		m.scanRes[i].Cleaner = c
+		m.scanIdx[c.Name()] = i
+	}
+	m.scanCh = make(chan runner.ScanResult, len(m.cleaners))
+	ch := m.scanCh
+	go func() {
+		// Each cleaner calls progress(res) exactly once as it finishes.
+		_, _ = m.runner.Scan(m.ctx, m.cleaners, func(r runner.ScanResult) { ch <- r })
+		close(ch)
+	}()
+	return waitForScan(ch)
+}
+
+// waitForScan blocks on the next streamed result, turning it into a
+// message. A closed channel means the scan is done.
+func waitForScan(ch chan runner.ScanResult) tea.Cmd {
 	return func() tea.Msg {
-		results, _ := m.runner.Scan(m.ctx, m.cleaners, nil)
-		return scanCompleteMsg{Results: results}
+		r, ok := <-ch
+		if !ok {
+			return scanCompleteMsg{}
+		}
+		return scanProgressMsg{Result: r}
 	}
 }
 
@@ -79,8 +110,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
+	case scanProgressMsg:
+		if i, ok := m.scanIdx[msg.Result.Cleaner.Name()]; ok {
+			m.scanRes[i] = msg.Result
+		}
+		m.scanDone++
+		m.lastScanned = msg.Result.Cleaner.Name()
+		m.foundBytes += msg.Result.TotalBytes
+		return m, waitForScan(m.scanCh)
 	case scanCompleteMsg:
-		m.scanRes = msg.Results
 		m.scanDone = m.scanTotal
 		m.phase = phaseSelect
 		return m, nil

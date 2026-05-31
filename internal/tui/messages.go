@@ -4,8 +4,13 @@ import "github.com/sachincool/cruft/internal/runner"
 
 // tea.Msg types used by the phase machine.
 
-// scanCompleteMsg signals all scanners have returned.
-type scanCompleteMsg struct{ Results []runner.ScanResult }
+// scanProgressMsg carries one cleaner's result as soon as it finishes,
+// so the scan view can tick up live instead of waiting for the whole batch.
+type scanProgressMsg struct{ Result runner.ScanResult }
+
+// scanCompleteMsg signals every scanner has returned (the progress
+// channel closed). Results are already accumulated on the model.
+type scanCompleteMsg struct{}
 
 // execCompleteMsg signals execute phase is done.
 type execCompleteMsg struct{ Results []runner.ExecResult }
