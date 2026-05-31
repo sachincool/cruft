@@ -79,9 +79,10 @@ Quick start:
 		// Accept positional cleaner names (e.g. `cruft gomod pip`) and pass
 		// them to runTUI. Without this, cobra rejects any non-subcommand arg
 		// with "unknown command". Subcommands still match first.
-		Args:          cobra.ArbitraryArgs,
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Args:              cobra.ArbitraryArgs,
+		ValidArgsFunction: completeCleanerNames,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
 	}
 	cmd.PersistentFlags().BoolVar(&flagDryRun, "dry-run", false, "preview only — show what would happen, change nothing")
 	cmd.PersistentFlags().BoolVarP(&flagYes, "yes", "y", false, "skip the confirm prompt")
@@ -170,6 +171,23 @@ func buildRunner() (*runner.Runner, error) {
 	})
 }
 
+// completeCleanerNames powers shell tab-completion for positional cleaner
+// arguments (e.g. `cruft run <TAB>`, `cruft explain <TAB>`). It offers the
+// registered cleaner names that aren't already on the command line.
+func completeCleanerNames(_ *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	chosen := map[string]bool{}
+	for _, a := range args {
+		chosen[a] = true
+	}
+	var names []string
+	for _, c := range cleaner.All() {
+		if !chosen[c.Name()] && strings.HasPrefix(c.Name(), toComplete) {
+			names = append(names, c.Name())
+		}
+	}
+	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
 // pickCleaners resolves the cleaners to run from flags and positional args.
 func pickCleaners(args []string) ([]cleaner.Cleaner, error) {
 	all := cleaner.All()
@@ -217,8 +235,9 @@ func runTUI(_ *cobra.Command, args []string) error {
 func cmdRun() *cobra.Command {
 	var all bool
 	c := &cobra.Command{
-		Use:   "run [cleaner...]",
-		Short: "Run cleaners non-interactively.",
+		Use:               "run [cleaner...]",
+		Short:             "Run cleaners non-interactively.",
+		ValidArgsFunction: completeCleanerNames,
 		RunE: func(cc *cobra.Command, args []string) error {
 			ctx := context.Background()
 			var cleaners []cleaner.Cleaner
@@ -371,9 +390,10 @@ func cmdDoctor() *cobra.Command {
 
 func cmdExplain() *cobra.Command {
 	return &cobra.Command{
-		Use:   "explain <cleaner>",
-		Short: "Show what a cleaner does, without running anything.",
-		Args:  cobra.ExactArgs(1),
+		Use:               "explain <cleaner>",
+		Short:             "Show what a cleaner does, without running anything.",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeCleanerNames,
 		RunE: func(_ *cobra.Command, args []string) error {
 			c := cleaner.ByName(args[0])
 			if c == nil {
