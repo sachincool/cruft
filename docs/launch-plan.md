@@ -15,8 +15,8 @@ Primary promise: **free developer disk space without losing trust.**
 
 ## Homepage/GitHub checklist
 
-- Add a real TUI screenshot and an asciinema demo.
-- Pin a short demo GIF near the top of the README.
+- Add a real TUI screenshot to complement the demo GIF.
+- Pin the demo GIF (rendered from `docs/demo.tape` with VHS) near the top of the README.
 - Publish signed release binaries with GoReleaser.
 - Create `sachincool/homebrew-tap` and enable the GoReleaser brew section.
 - Add repository topics: `macos`, `cli`, `tui`, `disk-cleanup`, `developer-tools`, `xcode`, `docker`, `terraform`, `golang`, `cache-cleaner`.
