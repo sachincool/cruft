@@ -1,0 +1,15 @@
+# Go
+/bin/
+/dist/
+*.test
+*.out
+coverage.txt
+
+# macOS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# local scratch
+*.log
+.env

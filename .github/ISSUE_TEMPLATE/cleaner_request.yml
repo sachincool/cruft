@@ -1,0 +1,117 @@
+name: Cleaner request
+description: Propose a new cleaner for a tool, cache, or app cruft doesn't cover yet.
+labels: [cleaner, enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Cleaners need a specific shape of information. Filling this in well means
+        whoever picks it up (you or someone else) can land it in a few hours.
+
+        If you're unsure about any field, write what you know — partial info still helps.
+
+  - type: input
+    id: tool
+    attributes:
+      label: Tool name
+      description: What's the tool, app, or cache?
+      placeholder: "Android Studio, uv, Bazel, Sketch, Postman, ..."
+    validations:
+      required: true
+
+  - type: input
+    id: category
+    attributes:
+      label: Category
+      description: One of lang, iac, container, system. (Or propose a new one in the description.)
+      placeholder: "lang"
+    validations:
+      required: true
+
+  - type: textarea
+    id: paths
+    attributes:
+      label: Paths it owns
+      description: |
+        Exact directories or files the cleaner is allowed to remove. One per line.
+        Use `~` for $HOME. Mark which are safe to nuke vs. which hold user data.
+      render: text
+      placeholder: |
+        ~/Library/Caches/Google/AndroidStudio*       (safe — IDE rebuilds)
+        ~/.gradle/caches                              (safe — re-downloads)
+        ~/.android/avd                                (NOT safe — emulator data)
+    validations:
+      required: true
+
+  - type: textarea
+    id: detect
+    attributes:
+      label: How to detect installed
+      description: |
+        How does cruft know the tool is on this machine? A binary on $PATH? A directory?
+        An env var? Output of a command?
+      placeholder: |
+        `studio` on $PATH, OR ~/Library/Application Support/Google/AndroidStudio* exists
+    validations:
+      required: true
+
+  - type: textarea
+    id: busy
+    attributes:
+      label: Busy process names
+      description: |
+        Process names cruft should `pgrep` for and skip the cleaner if found running.
+        One per line. Empty if always safe.
+      placeholder: |
+        studio
+        gradle
+        java
+
+  - type: dropdown
+    id: risky
+    attributes:
+      label: Is it risky?
+      description: Risky = expensive to regenerate, may surprise the user, or could break a running session.
+      options:
+        - "No — caches regenerate in seconds on next use"
+        - "Yes — see reason below"
+    validations:
+      required: true
+
+  - type: textarea
+    id: risk_reason
+    attributes:
+      label: Risk reason
+      description: If risky, one short sentence — this becomes the `RiskReason()` string shown in `cruft doctor` and `cruft explain`.
+      placeholder: "Forces a multi-minute project re-index on next IDE open."
+
+  - type: dropdown
+    id: regen_cost
+    attributes:
+      label: Regeneration cost
+      description: How long until things are "back to normal" after running the cleaner?
+      options:
+        - "Seconds — next command re-downloads or rebuilds quietly"
+        - "Minutes — noticeable wait on next use"
+        - "Hours — full re-index, full rebuild, or large network download"
+        - "Unrecoverable — user data, not regenerable"
+    validations:
+      required: true
+
+  - type: textarea
+    id: explain
+    attributes:
+      label: One-paragraph description
+      description: |
+        Plain English, second person. This becomes the cleaner's `Description()` —
+        the text shown in `cruft explain <name>`. Tell the user what gets deleted,
+        what regenerates, and what stays put.
+      placeholder: "Removes Android Studio's project caches and Gradle download cache. Your projects, settings, and SDKs stay put — Gradle re-downloads dependencies on next build (~2 min on a fast network)."
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Edge cases, multi-version installs, OS quirks, links to the tool's own cleanup docs.

@@ -1,0 +1,92 @@
+name: Bug report
+description: Something cruft did wrong, unsafely, or unexpectedly.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please fill out as much as you can. Reproductions beat descriptions.
+        Redact private paths before pasting if needed.
+
+  - type: input
+    id: version
+    attributes:
+      label: cruft version
+      description: Output of `cruft version`.
+      placeholder: "cruft v0.2.0 (commit abc1234)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: cruft doctor
+      description: Paste the full output of `cruft doctor`. Tells us what's installed, what's busy, what's risky on your machine.
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "macOS 15.5 (Apple Silicon)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: What you ran
+      description: The exact command, including flags.
+      render: sh
+      placeholder: "cruft run --all --safe"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Include error messages, exit code, anything unusual.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Numbered steps from a clean shell. If it only happens on your machine, say so.
+      placeholder: |
+        1. brew install sachincool/tap/cruft
+        2. cruft scan
+        3. ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Run mode
+      description: Was this a dry-run, a tombstoned (`--safe`) run, or a permanent delete?
+      options:
+        - dry-run
+        - safe (tombstoned)
+        - permanent
+        - not applicable
+    validations:
+      required: true
+
+  - type: input
+    id: runid
+    attributes:
+      label: Run ID
+      description: From `cruft last` or `~/.local/share/cruft/runs/`. Optional but very helpful.
+      placeholder: "20260528-141203-abc1"

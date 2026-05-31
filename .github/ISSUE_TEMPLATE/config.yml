@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/sachincool/cruft/discussions
+    about: For "how do I…", "is this safe…", "should cruft also clean…" questions. The issue tracker is for bugs, feature requests, and cleaner proposals.
+  - name: Security report
+    url: https://github.com/sachincool/cruft/security/advisories/new
+    about: Report a security issue privately — see SECURITY.md.

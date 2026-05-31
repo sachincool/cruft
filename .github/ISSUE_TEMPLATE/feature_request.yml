@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest a non-cleaner feature — flags, output, TUI, safety controls, etc.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a new cleaner, use the Cleaner request template instead.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What's annoying or missing today? Concrete examples beat abstractions.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should cruft do? Include the CLI shape (`cruft foo --bar`) if you have one in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Other shapes you thought about and why this one wins. Optional.
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Does this touch the runner, the TUI, a single cleaner, output formatting, audit log, profiles, something else?
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else

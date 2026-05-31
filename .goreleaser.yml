@@ -1,0 +1,72 @@
+version: 2
+
+project_name: cruft
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: cruft
+    main: ./cmd/cruft
+    binary: cruft
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - arm64
+      - amd64
+    ldflags:
+      - -s -w -X main.versionString={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+      - LICENSE
+      - SECURITY.md
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: '{{ incpatch .Version }}-next'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+brews:
+  - name: cruft
+    homepage: https://github.com/sachincool/cruft
+    description: "Decruft your dev laptop. 25 cleaners, deletes on confirm, --safe for 7-day undo."
+    license: MIT
+    repository:
+      owner: sachincool
+      name: homebrew-tap
+      branch: main
+      # Personal access token with `contents: write` on the tap repo.
+      # Set as a repo secret HOMEBREW_TAP_GITHUB_TOKEN on sachincool/cruft;
+      # the release workflow exposes it to GoReleaser.
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    install: |
+      bin.install "cruft"
+    test: |
+      assert_match(/\d+\.\d+/, shell_output("#{bin}/cruft version"))
+    caveats: |
+      cruft is macOS-only for now.
+        cruft                 # interactive TUI
+        cruft run --all       # non-interactive
+        cruft glossary        # define every term cruft uses
+      Audit logs: ~/.local/share/cruft/runs/
+      Recycle (--safe only):   ~/.local/share/cruft/tombstone/
