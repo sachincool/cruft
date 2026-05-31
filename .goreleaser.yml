@@ -12,9 +12,11 @@ builds:
     binary: cruft
     env:
       - CGO_ENABLED=0
+    # macOS only: every cleaner targets macOS paths (~/Library, Homebrew
+    # prefix, Xcode), so a Linux build would run but find nothing. Add
+    # linux back here if/when a Linux-safe cleaner subset lands.
     goos:
       - darwin
-      - linux
     goarch:
       - arm64
       - amd64
