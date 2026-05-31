@@ -178,14 +178,14 @@ cruft summary  (live)
 not installed on this machine: yarn, gem, terragrunt
 
 Total: 22.9 GB
-Audit log: ~/.local/share/cruft/audit/2026-05-31T08-42-17Z.jsonl
-Tombstone: ~/.local/share/cruft/tombstone  (restore with `cruft restore 20260531-084217`)
+Audit log: ~/.local/share/cruft/runs/20260531T084217Z.jsonl
+Tombstone: ~/.local/share/cruft/tombstone  (restore with `cruft restore 20260531T084217Z`)
 
 What's next
-  cruft restore 20260531-084217   undo this run (within 7 days)
-  cruft last                      per-cleaner detail for this run
-  cruft history                   all past runs
-  cruft                           run again
+  cruft restore 20260531T084217Z   undo this run (within 7 days)
+  cruft last                       per-cleaner detail for this run
+  cruft history                    all past runs
+  cruft                            run again
 ```
 
 ---

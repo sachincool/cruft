@@ -43,7 +43,6 @@ func renderSelect(m *Model) string {
 	}
 
 	// Render each group in order.
-	cursorRow := 0
 	for _, cat := range order {
 		idxs := groups[cat]
 		if len(idxs) == 0 {
@@ -58,7 +57,6 @@ func renderSelect(m *Model) string {
 			if rowIdx == m.cursor {
 				cursor = "▶ "
 			}
-			_ = cursorRow
 			checked := allApproved(s)
 			box := "[ ]"
 			if checked {

@@ -1,6 +1,7 @@
 # Go
 /bin/
 /dist/
+/cruft
 *.test
 *.out
 coverage.txt

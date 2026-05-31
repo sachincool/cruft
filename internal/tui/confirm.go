@@ -10,7 +10,7 @@ func renderConfirm(m *Model) string {
 	b.WriteString(StyleTitle.Render("Ready?"))
 	b.WriteString("\n\n")
 	selected := m.selectedBytes()
-	dry := runnerIsDryRun(m.runner)
+	dry := m.runner.IsDryRun()
 	if dry {
 		b.WriteString(StyleBanner.Render(fmt.Sprintf(
 			"DRY RUN — nothing will be deleted. Would free %s.",

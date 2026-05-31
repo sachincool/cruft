@@ -14,7 +14,7 @@ func renderSummary(m *Model) string {
 	for _, r := range m.execRes {
 		totalFreed += r.Result.BytesFreed
 	}
-	dry := runnerIsDryRun(m.runner)
+	dry := m.runner.IsDryRun()
 
 	if dry {
 		b.WriteString(fmt.Sprintf(

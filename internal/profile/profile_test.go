@@ -26,11 +26,25 @@ func TestParse(t *testing.T) {
 
 func TestFilterSafetyProfiles(t *testing.T) {
 	all := cleaner.All()
+
+	// Balanced scans everything, including risky cleaners, so they stay
+	// visible in the TUI/summary. The safety guarantee — risky findings
+	// are not auto-approved — lives in the runner, not here (see
+	// runner.Options.AutoApproveRisky and TestRiskyApproval). Filter only
+	// decides what gets scanned, so balanced selects the full set.
 	balanced := Filter(all, Balanced)
+	if len(balanced) != len(all) {
+		t.Fatalf("balanced selected %d cleaners, want %d (all)", len(balanced), len(all))
+	}
+	var sawRisky bool
 	for _, c := range balanced {
 		if c.Risky() {
-			t.Fatalf("balanced included risky cleaner %q", c.Name())
+			sawRisky = true
+			break
 		}
+	}
+	if !sawRisky {
+		t.Fatal("balanced should surface risky cleaners so the user can opt in")
 	}
 
 	aggressive := Filter(all, Aggressive)

@@ -296,7 +296,7 @@ func renderFooter(m *Model) string {
 	selected := m.selectedBytes()
 	predicted := m.beforeFS + selected
 	var modeNote string
-	if m.runner != nil && runnerIsDryRun(m.runner) {
+	if m.runner != nil && m.runner.IsDryRun() {
 		modeNote = StyleAccent.Render("DRY RUN") + " — nothing will be deleted"
 	} else {
 		modeNote = StyleDanger.Render("LIVE") + " — files will be tombstoned/deleted"
@@ -309,12 +309,4 @@ func renderFooter(m *Model) string {
 		modeNote,
 	)
 	return StyleFooter.Render(line)
-}
-
-// runnerIsDryRun is a small shim so the TUI doesn't reach into the
-// runner's private opts field. The runner exposes this via the
-// RunMode method below; for now we assume dry-run is the safe default
-// and return false only after the user has explicitly toggled.
-func runnerIsDryRun(r *runner.Runner) bool {
-	return r.IsDryRun()
 }

@@ -13,7 +13,7 @@ body:
     attributes:
       label: cruft version
       description: Output of `cruft version`.
-      placeholder: "cruft v0.2.0 (commit abc1234)"
+      placeholder: "0.2.0"
     validations:
       required: true
 
@@ -66,7 +66,7 @@ body:
       description: Numbered steps from a clean shell. If it only happens on your machine, say so.
       placeholder: |
         1. brew install sachincool/tap/cruft
-        2. cruft scan
+        2. cruft run --all --dry-run
         3. ...
     validations:
       required: true
@@ -89,4 +89,4 @@ body:
     attributes:
       label: Run ID
       description: From `cruft last` or `~/.local/share/cruft/runs/`. Optional but very helpful.
-      placeholder: "20260528-141203-abc1"
+      placeholder: "20260528T141203Z"
