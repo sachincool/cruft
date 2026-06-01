@@ -311,6 +311,7 @@ func cmdList() *cobra.Command {
 			for _, cat := range []cleaner.Category{
 				cleaner.CategoryLangPkg, cleaner.CategoryIaC,
 				cleaner.CategoryContainer, cleaner.CategorySystem,
+				cleaner.CategoryProject,
 			} {
 				cs := byCat[cat]
 				if len(cs) == 0 {
