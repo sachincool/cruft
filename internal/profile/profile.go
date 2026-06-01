@@ -41,6 +41,29 @@ var fastRegenerate = map[string]bool{
 	"vscode":           true,
 	"jetbrains-caches": true, // caches dir only; indexes live in jetbrains-system
 	"slack":            true,
+	// pure re-download caches with no project rebuild
+	"bun":      true,
+	"deno":     true,
+	"uv":       true,
+	"poetry":   true,
+	"pipenv":   true,
+	"conda":    true,
+	"composer": true,
+	"bundler":  true,
+	"nvm":      true,
+	"pyenv":    true,
+	"mise":     true,
+	// rebuild-on-next-launch app/tool caches
+	"cursor":              true,
+	"windsurf":            true,
+	"godot":               true,
+	"aws-cli":             true,
+	"xcode-caches":        true,
+	"xcode-devicesupport": true,
+	// re-download browser/engine binaries, no project rebuild
+	"playwright": true,
+	"puppeteer":  true,
+	"prisma":     true,
 }
 
 // Filter returns the subset of cleaners that match the profile.
