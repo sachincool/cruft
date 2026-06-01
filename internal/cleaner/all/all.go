@@ -6,5 +6,6 @@ import (
 	_ "github.com/sachincool/cruft/internal/cleaner/container"
 	_ "github.com/sachincool/cruft/internal/cleaner/iac"
 	_ "github.com/sachincool/cruft/internal/cleaner/lang"
+	_ "github.com/sachincool/cruft/internal/cleaner/project"
 	_ "github.com/sachincool/cruft/internal/cleaner/system"
 )

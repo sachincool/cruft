@@ -14,3 +14,7 @@ coverage.txt
 # local scratch
 *.log
 .env
+
+# Remotion promo (source tracked; deps + renders are not)
+/promo/node_modules/
+/promo/out/

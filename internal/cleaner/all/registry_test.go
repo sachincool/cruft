@@ -9,8 +9,8 @@ import (
 
 func TestRegisteredCleanersHaveTrustMetadata(t *testing.T) {
 	cleaners := cleaner.All()
-	if len(cleaners) < 20 {
-		t.Fatalf("registered cleaners = %d, want at least 20", len(cleaners))
+	if len(cleaners) < 50 {
+		t.Fatalf("registered cleaners = %d, want at least 50", len(cleaners))
 	}
 
 	seen := map[string]bool{}
@@ -27,7 +27,7 @@ func TestRegisteredCleanersHaveTrustMetadata(t *testing.T) {
 			t.Fatalf("%s: empty description", c.Name())
 		}
 		switch c.Category() {
-		case cleaner.CategoryLangPkg, cleaner.CategoryIaC, cleaner.CategoryContainer, cleaner.CategorySystem:
+		case cleaner.CategoryLangPkg, cleaner.CategoryIaC, cleaner.CategoryContainer, cleaner.CategorySystem, cleaner.CategoryProject:
 		default:
 			t.Fatalf("%s: unknown category %q", c.Name(), c.Category())
 		}
@@ -46,6 +46,13 @@ func TestExpectedCleanersAreRegistered(t *testing.T) {
 		"terraform", "terragrunt", "pulumi",
 		"docker", "docker-volumes", "colima",
 		"homebrew", "xcode-derived", "xcode-archives", "xcode-simulators", "library-caches", "vscode", "jetbrains-caches", "jetbrains-system", "slack", "trash",
+		// cleardisk-parity cache cleaners
+		"bun", "deno", "uv", "conda", "poetry", "pipenv", "cocoapods", "swiftpm", "carthage",
+		"sbt", "gradle-wrapper", "composer", "bazel", "flutter-pub", "bundler", "nvm", "pyenv", "mise",
+		"xcode-devicesupport", "xcode-caches", "android-sdk", "playwright", "puppeteer", "prisma",
+		"ollama", "huggingface", "cursor", "windsurf", "unity", "godot", "aws-cli",
+		// project artifact scanner
+		"project-artifacts",
 	}
 	for _, name := range want {
 		if cleaner.ByName(name) == nil {

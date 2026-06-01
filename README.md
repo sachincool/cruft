@@ -2,13 +2,17 @@
 <p align="center"><em>decruft your dev laptop.</em></p>
 
 <p align="center">
+  <a href="assets/cruft-promo.mp4"><img src="assets/cruft-promo.gif" alt="cruft promo: scattered dev caches pile up, cruft scans them in parallel and reviews each with a risk chip, then reclaims 84 GB with a --safe 7-day undo" width="100%"></a>
+</p>
+
+<p align="center">
   <code>~/Library/Caches</code>&nbsp;&nbsp; <code>~/Library/Developer/Xcode</code>&nbsp;&nbsp; <code>~/.terraform</code>&nbsp;&nbsp; <code>~/.gradle/caches</code><br>
   <code>~/.cargo</code>&nbsp;&nbsp; <code>~/.npm</code>&nbsp;&nbsp; <code>~/.colima</code>&nbsp;&nbsp; <em>…and a dozen more</em>
 </p>
 
 <p align="center"><b>cruft finds every one, shows you why each is safe to delete, and clears only what you tick.</b></p>
 
-<p align="center">one Go binary · 25 cleaners · deletes on confirm · <code>--safe</code> for 7-day undo · macOS</p>
+<p align="center">one Go binary · 57 cleaners · deletes on confirm · <code>--safe</code> for 7-day undo · macOS</p>
 
 <p align="center">
   <a href="https://github.com/sachincool/cruft/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/sachincool/cruft/actions/workflows/ci.yml/badge.svg"></a>
@@ -91,14 +95,28 @@ cruft completion fish | source      # fish
 
 ## What it cleans
 
+57 cleaners across six families. Run `cruft list` for the full set.
+
 | | |
 |---|---|
-| **Language caches** | npm · pnpm · yarn · pip · cargo · Go module cache · gem · gradle · maven |
+| **JS / TS** | npm · pnpm · yarn · bun · deno · nvm |
+| **Python** | pip · uv · conda · poetry · pipenv · pyenv |
+| **JVM / Android** | gradle · gradle-wrapper · maven · sbt (Ivy) · Android SDK |
+| **Apple / Swift** | Xcode DerivedData · archives · simulators · device support · caches · Swift PM · CocoaPods · Carthage |
+| **Other langs** | cargo · Go module cache · gem · bundler · composer · flutter/pub · bazel · mise |
 | **IaC state** | terraform · terragrunt · pulumi |
 | **Containers** | docker · docker volumes · colima |
-| **macOS apps** | Homebrew · Xcode DerivedData · Xcode archives · unavailable simulators · Library/Caches (allowlist) · VS Code · JetBrains caches · JetBrains system · Slack · Trash |
+| **AI / ML** | ollama · huggingface |
+| **Editors / tools** | VS Code · Cursor · Windsurf · JetBrains caches · JetBrains system · playwright · puppeteer · prisma |
+| **Game engines** | unity · godot |
+| **macOS / cloud** | Homebrew · Library/Caches (allowlist) · Slack · Trash · AWS CLI |
+| **Project artifacts** | stale `node_modules/` · `target/` · `build/` · `.build/` · `vendor/` · `dist/` under projects you haven't touched in `--stale-days` |
 
-Risky cleaners (Docker volumes, JetBrains system indexes, Xcode archives, Trash, …) stay opt-in. Each one prints its own one-line reason in `cruft doctor` and `cruft explain`. Surface them with `--include-risky` or `--profile aggressive`.
+Risky cleaners (Ollama / HuggingFace model weights, Docker volumes, JetBrains system indexes, Xcode archives, Trash, …) stay opt-in. Each one prints its own one-line reason in `cruft doctor` and `cruft explain`. Surface them with `--include-risky` or `--profile aggressive`.
+
+> **Why cruft over a menu-bar app?** Same breadth, but cruft is a single scriptable binary: `--dry-run` to preview, `--safe` for a 7-day undo, a JSONL audit log (`cruft history`), `--json` output for CI, and a busy-process guard that refuses to wipe a cache while its tool is running. No GUI, no daemon, no telemetry.
+
+> **What it leaves alone:** `~/.android/avd` (emulator disks hold real user data, not a rebuildable cache), installed language-version directories under `nvm`/`pyenv`/`mise`, and your `~/.aws` credentials/config — only the resolution cache is touched.
 
 ## What it doesn't do
 
@@ -116,9 +134,10 @@ Short answer: yes — and you can always check its work.
   directories it owns. cruft follows symlinks to where they really point,
   then refuses to delete anything that isn't on the list. No globs, no
   "delete everything under here."
-- **The risky stuff is opt-in.** Six cleaners are marked *risky* because what
+- **The risky stuff is opt-in.** Eight cleaners are marked *risky* because what
   they delete takes a while to come back (a JetBrains re-index, an Xcode
-  archive). They never run by default, and each one tells you why it's risky.
+  archive, tens of GB of Ollama model weights). They never run by default, and
+  each one tells you why it's risky.
 - **It waits for your tools.** If `node` is running, the npm cleaner skips
   this round. If Xcode is open, DerivedData is left alone — so nothing gets
   pulled out from under a running build.
@@ -166,6 +185,6 @@ Add a cleaner: copy any file under `internal/cleaner/<category>/`, implement the
 
 ## Status
 
-macOS only. ~4,700 lines of Go across 58 files. 25 cleaners. Used on the maintainer's laptop. PRs welcome — especially Linux support, more cleaners, and tests with real fixtures.
+macOS only. ~5,600 lines of Go across 90 files. 57 cleaners. Used on the maintainer's laptop. PRs welcome — especially Linux support, more cleaners, and tests with real fixtures.
 
 License: MIT

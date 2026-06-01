@@ -35,6 +35,7 @@ func renderSelect(m *Model) string {
 	order := []cleaner.Category{
 		cleaner.CategoryLangPkg, cleaner.CategoryIaC,
 		cleaner.CategoryContainer, cleaner.CategorySystem,
+		cleaner.CategoryProject,
 	}
 	visible := m.visibleScans()
 	for _, idx := range visible {

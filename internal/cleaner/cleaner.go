@@ -14,6 +14,7 @@ const (
 	CategoryIaC       Category = "iac"
 	CategoryContainer Category = "container"
 	CategorySystem    Category = "system"
+	CategoryProject   Category = "project"
 )
 
 func (c Category) Title() string {
@@ -26,6 +27,8 @@ func (c Category) Title() string {
 		return "Containers & VMs"
 	case CategorySystem:
 		return "System & apps"
+	case CategoryProject:
+		return "Project build artifacts"
 	}
 	return string(c)
 }
