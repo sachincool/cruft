@@ -45,6 +45,7 @@ var (
 	flagJSON         bool
 	flagSearchRoots  []string
 	flagIncludeRisky bool
+	flagReclaimSnaps bool
 
 	versionString = "0.1.0-dev"
 )
@@ -96,6 +97,7 @@ Quick start:
 	cmd.PersistentFlags().BoolVar(&flagJSON, "json", false, "machine-readable output for non-TUI subcommands")
 	cmd.PersistentFlags().StringSliceVar(&flagSearchRoots, "search-root", defaultSearchRoots(), "directories scanned for stale .terraform/ etc")
 	cmd.PersistentFlags().BoolVar(&flagIncludeRisky, "include-risky", false, "include cleaners marked risky")
+	cmd.PersistentFlags().BoolVar(&flagReclaimSnaps, "reclaim-snapshots", true, "after a live run, thin Time Machine local snapshots so deleted space actually frees (macOS)")
 
 	// Journey-ordered groups so --help reads in the order a user
 	// actually does things: explore → run → recover. Cobra defaults
@@ -259,21 +261,54 @@ func cmdRun() *cobra.Command {
 			}
 			defer r.Close()
 
+			// Free space before and after the run. The Total below is a
+			// sum of finding sizes (an estimate of what was removed); this
+			// pair lets the summary show the *measured* disk delta, which
+			// can be far smaller — e.g. Docker's sparse VM image doesn't
+			// shrink on prune, and APFS/Time Machine snapshots can pin
+			// freed blocks until they're thinned.
+			beforeFS := fsutil.FreeBytes("/")
 			scans, err := r.Scan(ctx, cleaners, nil)
 			if err != nil {
 				return err
 			}
 			results := r.Execute(ctx, scans, nil)
+			afterFS := fsutil.FreeBytes("/")
+
+			// Reclaim snapshot-pinned space in the same run. Deletions can
+			// "succeed" yet leave free space unchanged because Time Machine
+			// local snapshots still reference the removed blocks. When that
+			// gap shows up after a live run, thin just enough snapshots to
+			// recover what we deleted, then re-measure.
+			var snapReclaimed int64
+			if flagReclaimSnaps && !flagDryRun {
+				var removed int64
+				for _, x := range results {
+					removed += x.Result.BytesFreed
+				}
+				if removed >= 1<<30 && (afterFS-beforeFS) < removed &&
+					fsutil.HasLocalSnapshots(ctx, "/") {
+					target := removed - max(afterFS-beforeFS, 0)
+					_ = fsutil.ThinLocalSnapshots(ctx, "/", target)
+					reAfter := fsutil.FreeBytes("/")
+					snapReclaimed = max(reAfter-afterFS, 0)
+					afterFS = reAfter
+				}
+			}
 
 			if flagJSON {
 				return json.NewEncoder(os.Stdout).Encode(runJSONOutput{
-					RunID:     r.RunID(),
-					AuditLog:  r.AuditPath(),
-					Tombstone: r.TombstoneRoot(),
-					Results:   resultsToJSON(results),
+					RunID:              r.RunID(),
+					AuditLog:           r.AuditPath(),
+					Tombstone:          r.TombstoneRoot(),
+					FreeBefore:         beforeFS,
+					FreeAfter:          afterFS,
+					ActualFreed:        afterFS - beforeFS,
+					SnapshotsReclaimed: snapReclaimed,
+					Results:            resultsToJSON(results),
 				})
 			}
-			return printSummary(results, r)
+			return printSummary(results, r, beforeFS, afterFS, snapReclaimed)
 		},
 	}
 	c.Flags().BoolVar(&all, "all", false, "run all non-risky cleaners (per --profile)")
@@ -538,10 +573,14 @@ type listRow struct {
 }
 
 type runJSONOutput struct {
-	RunID     string          `json:"run_id"`
-	AuditLog  string          `json:"audit_log"`
-	Tombstone string          `json:"tombstone"`
-	Results   []runResultJSON `json:"results"`
+	RunID              string          `json:"run_id"`
+	AuditLog           string          `json:"audit_log"`
+	Tombstone          string          `json:"tombstone"`
+	FreeBefore         int64           `json:"free_before_bytes"`
+	FreeAfter          int64           `json:"free_after_bytes"`
+	ActualFreed        int64           `json:"actual_freed_bytes"`
+	SnapshotsReclaimed int64           `json:"snapshots_reclaimed_bytes,omitempty"`
+	Results            []runResultJSON `json:"results"`
 }
 
 type runResultJSON struct {
@@ -578,7 +617,7 @@ func resultsToJSON(rs []runner.ExecResult) []runResultJSON {
 	return out
 }
 
-func printSummary(results []runner.ExecResult, r *runner.Runner) error {
+func printSummary(results []runner.ExecResult, r *runner.Runner, beforeFS, afterFS, snapReclaimed int64) error {
 	type riskyOffer struct {
 		name   string
 		reason string
@@ -690,7 +729,53 @@ func printSummary(results []runner.ExecResult, r *runner.Runner) error {
 	}
 
 	fmt.Println()
-	fmt.Printf("Total: %s\n", tui.StyleAccent.Render(tui.HumanBytes(totalFreed)))
+	fmt.Printf("Total: %s %s\n",
+		tui.StyleAccent.Render(tui.HumanBytes(totalFreed)),
+		tui.StyleMuted.Render("(sum of what was removed)"),
+	)
+
+	// Measured disk delta — the honest "what actually changed on the
+	// volume" number, from statfs before-scan vs after-execute. In a
+	// live run this is what the user should trust: the Total above is a
+	// sum of file sizes, but freed bytes can stay claimed by APFS / Time
+	// Machine local snapshots, and Docker's prune never shrinks its
+	// sparse VM image. When the two diverge, this line shows it instead
+	// of hiding it behind an optimistic headline.
+	if beforeFS > 0 && afterFS > 0 {
+		if r.IsDryRun() {
+			predicted := beforeFS + totalFreed
+			fmt.Printf("Disk free: %s → %s   %s\n",
+				tui.HumanBytes(beforeFS),
+				tui.StyleAccent.Render(tui.HumanBytes(predicted)),
+				tui.StyleMuted.Render("("+tui.HumanBytes(totalFreed)+" would be freed)"),
+			)
+		} else {
+			freed := max(afterFS-beforeFS, 0)
+			fmt.Printf("Disk free: %s → %s   %s\n",
+				tui.HumanBytes(beforeFS),
+				tui.StyleAccent.Render(tui.HumanBytes(afterFS)),
+				tui.StyleAccent.Render("("+tui.HumanBytes(freed)+" actually freed)"),
+			)
+			if snapReclaimed > 0 {
+				fmt.Println(tui.StyleMuted.Render(
+					"   incl. " + tui.HumanBytes(snapReclaimed) +
+						" recovered by thinning Time Machine local snapshots",
+				))
+			}
+			// Loud, only when it still matters after the snapshot thin:
+			// deletions "succeeded" but the volume barely moved. The usual
+			// remaining cause on a dev box is Docker — prune reports space
+			// reclaimed but never shrinks its sparse VM image on macOS.
+			if totalFreed >= 1<<30 && freed < totalFreed/2 {
+				fmt.Println(tui.StyleWarn.Render(
+					"⚠  still less freed than removed — likely Docker's sparse image (prune doesn't shrink it)",
+				))
+				fmt.Println(tui.StyleMuted.Render(
+					"   or snapshots pinned by an active backup. Check: `tmutil listlocalsnapshots /`",
+				))
+			}
+		}
+	}
 	if p := r.AuditPath(); p != "" {
 		fmt.Println(tui.StyleMuted.Render("Audit log: " + p))
 	}
