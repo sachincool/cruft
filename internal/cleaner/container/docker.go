@@ -38,6 +38,22 @@ type dockerDFItem struct {
 	Reclaimable string
 }
 
+// danglingImageBytes sums the sizes of dangling images — the only
+// images `docker system prune -f` removes. Best effort; shared layers
+// may be counted more than once.
+func danglingImageBytes(ctx context.Context) int64 {
+	out, err := exec.CommandContext(ctx, "docker", "images",
+		"--filter", "dangling=true", "--format", "{{.Size}}").Output()
+	if err != nil {
+		return 0
+	}
+	var bytes int64
+	for _, line := range strings.Split(string(out), "\n") {
+		bytes += parseDockerSize(strings.TrimSpace(line))
+	}
+	return bytes
+}
+
 func (dockerCleaner) Scan(ctx context.Context, opts cleaner.ScanOpts) ([]cleaner.Finding, error) {
 	out, err := exec.CommandContext(ctx, "docker", "system", "df", "--format", "{{json .}}").Output()
 	if err != nil {
@@ -53,9 +69,18 @@ func (dockerCleaner) Scan(ctx context.Context, opts cleaner.ScanOpts) ([]cleaner
 		if err := json.Unmarshal([]byte(line), &item); err != nil {
 			continue
 		}
+		// Only count what `docker system prune -f` actually frees.
+		// "Local Volumes" are never pruned here (and are docker-volumes'
+		// row — counting them double-counts AND overpromises). The
+		// "Images" row counts every unused image, but prune only removes
+		// dangling ones — estimate those separately below.
+		if item.Type == "Local Volumes" || item.Type == "Images" {
+			continue
+		}
 		// Reclaimable looks like "1.2GB" or "850MB (50%)".
 		bytes += parseDockerSize(item.Reclaimable)
 	}
+	bytes += danglingImageBytes(ctx)
 	if bytes <= 0 {
 		return nil, nil
 	}

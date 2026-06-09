@@ -20,6 +20,10 @@ type Log struct {
 	f        *os.File
 	enc      *json.Encoder
 	disabled bool
+	// writeErr is the first Record failure (e.g. disk full — plausible
+	// for a tool that runs because the disk is full). Surfaced by Close
+	// so a truncated forensic log doesn't pass silently.
+	writeErr error
 }
 
 // Open creates the audit directory if needed and opens a new file at
@@ -51,7 +55,9 @@ func (l *Log) Record(e cleaner.AuditEntry) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	_ = l.enc.Encode(e)
+	if err := l.enc.Encode(e); err != nil && l.writeErr == nil {
+		l.writeErr = err
+	}
 }
 
 // Close flushes and closes the file.
@@ -64,6 +70,9 @@ func (l *Log) Close() error {
 	if l.f != nil {
 		err := l.f.Close()
 		l.f = nil
+		if l.writeErr != nil {
+			return l.writeErr
+		}
 		return err
 	}
 	return nil

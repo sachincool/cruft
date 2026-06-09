@@ -60,7 +60,12 @@ func (goModCleaner) Scan(ctx context.Context, opts cleaner.ScanOpts) ([]cleaner.
 		Bytes:        s.Bytes,
 		LastModified: s.LastModified,
 		Reason:       "go module cache (re-download next build)",
-		SamplePaths:  samples,
+		// Cleaned via `go clean -modcache` (the cache is read-only on
+		// disk), so it can never be tombstoned — without this flag a
+		// --safe run would silently delete it for good while promising
+		// `cruft restore` works.
+		ShellOut:    true,
+		SamplePaths: samples,
 	}}, nil
 }
 

@@ -29,6 +29,9 @@ func (b *Budget) Add(bytes int64) bool {
 	return b.freed.Load() < b.cap
 }
 
+// Limited reports whether a byte cap is set at all.
+func (b *Budget) Limited() bool { return b != nil && b.cap > 0 }
+
 // Exhausted returns true if the cap has been reached.
 func (b *Budget) Exhausted() bool {
 	if b == nil || b.cap <= 0 {

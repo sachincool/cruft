@@ -42,20 +42,20 @@ func thinLocalSnapshots(ctx context.Context, mount string, purgeBytes int64) err
 //
 // After a cleanup, blocks freed by deletion can stay "purgeable" because
 // local snapshots still reference them — pure waste once the live files
-// are gone. We thin aggressively (highest urgency, target larger than any
-// real disk) so a single run actually hands the space back to the OS,
-// including space pinned by deletions from earlier runs. tmutil keeps the
-// newest restore points it can while meeting the target, and real Time
-// Machine backups on a destination drive are never touched.
+// are gone. The thin target is bounded by targetBytes (what this run
+// deleted): tmutil drops the oldest snapshots until that much space is
+// released, keeping newer restore points intact. An unbounded thin would
+// destroy every local restore point on the machine, far beyond what the
+// user approved. Real Time Machine backups on a destination drive are
+// never touched.
 //
-// No-op (0) when tmutil is absent or there are no local snapshots.
-func ReclaimLocalSnapshots(ctx context.Context, mount string) int64 {
-	if !HasLocalSnapshots(ctx, mount) {
+// No-op (0) when tmutil is absent, there are no local snapshots, or
+// targetBytes is non-positive (nothing was deleted, nothing to unpin).
+func ReclaimLocalSnapshots(ctx context.Context, mount string, targetBytes int64) int64 {
+	if targetBytes <= 0 || !HasLocalSnapshots(ctx, mount) {
 		return 0
 	}
 	before := FreeBytes(mount)
-	// 1<<50 (~1 PiB) is far above any real volume, so tmutil reclaims
-	// every thinnable snapshot rather than stopping at a byte target.
-	_ = thinLocalSnapshots(ctx, mount, 1<<50)
+	_ = thinLocalSnapshots(ctx, mount, targetBytes)
 	return max(FreeBytes(mount)-before, 0)
 }

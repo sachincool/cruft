@@ -28,14 +28,19 @@ func renderSummary(m *Model) string {
 		))
 	}
 
-	// Per-cleaner table.
+	// Per-cleaner table. Keep rows that did no work but were skipped or
+	// errored (e.g. budget exhausted) — selected items must not silently
+	// vanish from the receipt.
 	for _, r := range m.execRes {
-		if r.Result.Findings == 0 {
+		if r.Result.Findings == 0 && r.Result.Skipped == 0 && len(r.Result.Errors) == 0 {
 			continue
 		}
 		status := StyleAccent.Render("✓")
-		if r.Result.Failed > 0 {
+		switch {
+		case r.Result.Failed > 0 || (r.Result.Succeeded == 0 && len(r.Result.Errors) > 0):
 			status = StyleDanger.Render("✗")
+		case r.Result.Skipped > 0 && r.Result.Succeeded == 0:
+			status = StyleMuted.Render("⏸")
 		}
 		b.WriteString(fmt.Sprintf(
 			"  %s %-22s %s\n",
@@ -43,6 +48,13 @@ func renderSummary(m *Model) string {
 			r.Cleaner.Name(),
 			StyleAccent.Render(HumanBytes(r.Result.BytesFreed)),
 		))
+		// A bare ✗ tells the user nothing actionable; show the first
+		// error inline — the audit log has the rest.
+		if r.Result.Failed > 0 || (r.Result.Succeeded == 0 && len(r.Result.Errors) > 0) {
+			if len(r.Result.Errors) > 0 {
+				b.WriteString(StyleMuted.Render("      ↳ "+r.Result.Errors[0].Error()) + "\n")
+			}
+		}
 	}
 
 	// Disk delta.

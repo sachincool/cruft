@@ -20,12 +20,14 @@ var ErrOutsideWhitelist = errors.New("fsutil: path outside whitelist")
 // ErrRefuseRoot is returned when running as root.
 var ErrRefuseRoot = errors.New("fsutil: refusing to operate as root")
 
-// SafeRemove deletes path (file or directory tree) iff its
-// symlink-resolved location lies under at least one allowed prefix.
+// SafeRemove deletes path (file or directory tree) iff its real
+// location lies under at least one allowed prefix.
 //
-// The whitelist check uses filepath.EvalSymlinks so that a symlink
-// inside an allowed prefix cannot redirect the deletion to an outside
-// location. Each allowedPrefix is itself normalised the same way.
+// Ancestor directories are resolved with filepath.EvalSymlinks so a
+// symlinked parent cannot redirect the deletion elsewhere, but the
+// final path element is never followed: if path itself is a symlink
+// (including a dangling one), only the link is removed — never its
+// target. Each allowedPrefix is normalised the same way.
 //
 // If path does not exist, SafeRemove returns nil — already-gone is the
 // desired state.
@@ -37,21 +39,32 @@ func SafeRemove(path string, allowedPrefixes []string) error {
 	if err != nil {
 		return fmt.Errorf("fsutil: abs: %w", err)
 	}
-	// Resolve any symlinks that compose the path. If the path itself
-	// doesn't exist, fall back to the lexical abs path — there's
-	// nothing to symlink-escape to.
-	resolved, err := filepath.EvalSymlinks(abs)
+	fi, err := os.Lstat(abs)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
-		// EvalSymlinks fails on broken symlinks; treat as not-exist.
-		resolved = abs
+		return fmt.Errorf("fsutil: lstat: %w", err)
 	}
-	if !underAny(resolved, allowedPrefixes) {
-		return fmt.Errorf("%w: %s", ErrOutsideWhitelist, resolved)
+	// Resolve symlinks in the ancestry only; the entry itself must be
+	// deleted as whatever it is, not as what it points to.
+	parent, err := filepath.EvalSymlinks(filepath.Dir(abs))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("fsutil: resolve parent: %w", err)
 	}
-	return os.RemoveAll(resolved)
+	real := filepath.Join(parent, filepath.Base(abs))
+	if !underAny(real, allowedPrefixes) {
+		return fmt.Errorf("%w: %s", ErrOutsideWhitelist, real)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		// Remove the link itself; following it could destroy a tree
+		// anywhere on disk that merely happened to be pointed at.
+		return os.Remove(real)
+	}
+	return os.RemoveAll(real)
 }
 
 // IsUnder returns true if path (after symlink resolution where possible)

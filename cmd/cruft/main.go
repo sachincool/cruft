@@ -84,6 +84,15 @@ Quick start:
 		ValidArgsFunction: completeCleanerNames,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
+		// Reject --profile typos up front: profile.Parse falls back to
+		// balanced, so `--profile agressive` would otherwise silently run
+		// a different scope than the user asked for.
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+			if !profile.Valid(flagProfile) {
+				return fmt.Errorf("unknown --profile %q — use conservative, balanced, or aggressive", flagProfile)
+			}
+			return nil
+		},
 	}
 	cmd.PersistentFlags().BoolVar(&flagDryRun, "dry-run", false, "preview only — show what would happen, change nothing")
 	cmd.PersistentFlags().BoolVarP(&flagYes, "yes", "y", false, "skip the confirm prompt")
@@ -137,11 +146,28 @@ func defaultTombstoneDir() string {
 func defaultSearchRoots() []string {
 	candidates := []string{"~/Projects", "~/projects", "~/code", "~/work", "~/src", "~/dev"}
 	var out []string
+	var infos []os.FileInfo
 	for _, c := range candidates {
 		p := fsutil.Expand(c)
-		if fsutil.Exists(p) {
-			out = append(out, p)
+		info, err := os.Stat(p)
+		if err != nil {
+			continue
 		}
+		// On case-insensitive APFS ~/Projects and ~/projects are the same
+		// directory; scanning both would double-count every finding and
+		// then fail the second delete. Dedupe by identity, not by name.
+		dup := false
+		for _, seen := range infos {
+			if os.SameFile(seen, info) {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+		infos = append(infos, info)
+		out = append(out, p)
 	}
 	if len(out) == 0 {
 		out = []string{fsutil.HomeDir()}
@@ -223,10 +249,16 @@ func runTUI(_ *cobra.Command, args []string) error {
 		return err
 	}
 	defer r.Close()
-	// Sweep any tombstone runs older than retention up-front.
-	_, _ = r.SweepTombstone(time.Duration(flagTombstoneDays) * 24 * time.Hour)
+	// Sweep any tombstone runs older than retention up-front. Use a
+	// standalone store, not the runner's: the runner only has one when
+	// --safe is set, and the promise "recoverable for N days" must be
+	// enforced on every launch, not just --safe ones.
+	_, _ = tombstone.New(defaultTombstoneDir()).Sweep(time.Duration(flagTombstoneDays) * 24 * time.Hour)
 
-	m := tui.NewModel(context.Background(), r, cleaners)
+	m := tui.NewModel(context.Background(), r, cleaners, tui.Options{
+		ReclaimSnapshots: flagReclaimSnaps,
+		SkipConfirm:      flagYes,
+	})
 	prog := tea.NewProgram(m, tea.WithAltScreen())
 	_, err = prog.Run()
 	return err
@@ -250,6 +282,13 @@ func cmdRun() *cobra.Command {
 					cleaners = profile.Filter(cleaner.All(), profile.Aggressive)
 				}
 			} else {
+				// Bare `cruft run` used to silently behave like `run --all`
+				// — immediate live deletion for someone who typed it
+				// expecting usage help. Make the full sweep an explicit
+				// opt-in.
+				if len(args) == 0 {
+					return fmt.Errorf("specify cleaners to run (e.g. `cruft run npm gomod`) or pass --all")
+				}
 				cleaners, err = pickCleaners(args)
 				if err != nil {
 					return err
@@ -260,6 +299,7 @@ func cmdRun() *cobra.Command {
 				return err
 			}
 			defer r.Close()
+			_, _ = tombstone.New(defaultTombstoneDir()).Sweep(time.Duration(flagTombstoneDays) * 24 * time.Hour)
 
 			// Free space before and after the run. The Total below is a
 			// sum of finding sizes (an estimate of what was removed); this
@@ -277,19 +317,23 @@ func cmdRun() *cobra.Command {
 
 			// Reclaim snapshot-pinned space in the same run. Deletions can
 			// "succeed" yet leave free space unchanged because Time Machine
-			// local snapshots still reference the removed blocks. After any
-			// live run, hand that space back to the OS — this also recovers
-			// space pinned by deletions from earlier runs.
+			// local snapshots still reference the removed blocks. The thin
+			// target is bounded by what this run freed, so older restore
+			// points survive.
 			var snapReclaimed int64
 			if flagReclaimSnaps && !flagDryRun {
-				snapReclaimed = fsutil.ReclaimLocalSnapshots(ctx, "/")
+				var freed int64
+				for _, x := range results {
+					freed += x.Result.BytesFreed
+				}
+				snapReclaimed = fsutil.ReclaimLocalSnapshots(ctx, "/", freed)
 				if snapReclaimed > 0 {
 					afterFS = fsutil.FreeBytes("/")
 				}
 			}
 
 			if flagJSON {
-				return json.NewEncoder(os.Stdout).Encode(runJSONOutput{
+				if err := json.NewEncoder(os.Stdout).Encode(runJSONOutput{
 					RunID:              r.RunID(),
 					AuditLog:           r.AuditPath(),
 					Tombstone:          r.TombstoneRoot(),
@@ -298,9 +342,17 @@ func cmdRun() *cobra.Command {
 					ActualFreed:        afterFS - beforeFS,
 					SnapshotsReclaimed: snapReclaimed,
 					Results:            resultsToJSON(results),
-				})
+				}); err != nil {
+					return err
+				}
+				return failuresAsError(results)
 			}
-			return printSummary(results, r, beforeFS, afterFS, snapReclaimed)
+			if err := printSummary(results, r, beforeFS, afterFS, snapReclaimed); err != nil {
+				return err
+			}
+			// Scripted callers need the exit code to reflect failed
+			// deletions; the summary alone is invisible to a script.
+			return failuresAsError(results)
 		},
 	}
 	c.Flags().BoolVar(&all, "all", false, "run all non-risky cleaners (per --profile)")
@@ -556,6 +608,19 @@ func cmdVersion() *cobra.Command {
 	}
 }
 
+// failuresAsError converts failed deletions into a non-nil error so the
+// process exits 1 when any approved finding could not be cleaned.
+func failuresAsError(results []runner.ExecResult) error {
+	var failed int
+	for _, x := range results {
+		failed += x.Result.Failed
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d deletion(s) failed — see the summary above or the audit log", failed)
+	}
+	return nil
+}
+
 // ---- output helpers ----
 
 type listRow struct {
@@ -670,15 +735,25 @@ func printSummary(results []runner.ExecResult, r *runner.Runner, beforeFS, after
 		if x.NotInstalled || x.BusyProcess != "" {
 			continue
 		}
-		if x.Result.Findings == 0 {
+		// Keep rows that did no work but were skipped or errored (e.g.
+		// budget exhausted) — selected items must not vanish from the
+		// receipt.
+		if x.Result.Findings == 0 && x.Result.Skipped == 0 && len(x.Result.Errors) == 0 {
 			continue
 		}
 		marker := tui.StyleAccent.Render("✓")
-		if x.Result.Failed > 0 {
+		failedRow := x.Result.Failed > 0 || (x.Result.Succeeded == 0 && len(x.Result.Errors) > 0)
+		switch {
+		case failedRow:
 			marker = tui.StyleDanger.Render("✗")
+		case x.Result.Skipped > 0 && x.Result.Succeeded == 0:
+			marker = tui.StyleMuted.Render("⏸")
 		}
 		fmt.Printf("  %s %-22s %s\n", marker, x.Cleaner.Name(),
 			tui.StyleAccent.Render(tui.HumanBytes(x.Result.BytesFreed)))
+		if failedRow && len(x.Result.Errors) > 0 {
+			fmt.Println(tui.StyleMuted.Render("      ↳ " + x.Result.Errors[0].Error()))
+		}
 	}
 
 	// Risky-but-unapproved findings: scanned, found stuff, but not

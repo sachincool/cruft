@@ -22,11 +22,21 @@ const (
 	phaseSummary
 )
 
+// Options carries CLI flags that change TUI behaviour.
+type Options struct {
+	// ReclaimSnapshots thins Time Machine local snapshots after a live
+	// run so deleted space actually frees (--reclaim-snapshots).
+	ReclaimSnapshots bool
+	// SkipConfirm jumps straight from select to execute (--yes).
+	SkipConfirm bool
+}
+
 // Model is the bubbletea root model.
 type Model struct {
 	ctx      context.Context
 	runner   *runner.Runner
 	cleaners []cleaner.Cleaner
+	opts     Options
 	phase    phase
 	scanRes  []runner.ScanResult
 	execRes  []runner.ExecResult
@@ -55,11 +65,12 @@ type Model struct {
 
 // NewModel returns the root TUI model. Pass the prepared runner and
 // the slice of cleaners to scan.
-func NewModel(ctx context.Context, r *runner.Runner, cs []cleaner.Cleaner) *Model {
+func NewModel(ctx context.Context, r *runner.Runner, cs []cleaner.Cleaner, opts Options) *Model {
 	return &Model{
 		ctx:       ctx,
 		runner:    r,
 		cleaners:  cs,
+		opts:      opts,
 		phase:     phaseScan,
 		scanTotal: len(cs),
 		beforeFS:  fsutil.FreeBytes("/"),
@@ -104,10 +115,16 @@ func (m *Model) startExecute() tea.Cmd {
 		results := m.runner.Execute(m.ctx, m.scanRes, nil)
 		// Reclaim snapshot-pinned space here, on the command goroutine,
 		// so the blocking tmutil call never stalls the UI loop. Skipped
-		// in dry-run (nothing was deleted to reclaim).
+		// in dry-run, when --reclaim-snapshots=false, or when nothing
+		// was actually deleted. The thin target is bounded by what this
+		// run freed so older restore points survive.
 		var reclaimed int64
-		if !m.runner.IsDryRun() {
-			reclaimed = fsutil.ReclaimLocalSnapshots(m.ctx, "/")
+		if m.opts.ReclaimSnapshots && !m.runner.IsDryRun() {
+			var freed int64
+			for _, r := range results {
+				freed += r.Result.BytesFreed
+			}
+			reclaimed = fsutil.ReclaimLocalSnapshots(m.ctx, "/", freed)
 		}
 		return execCompleteMsg{Results: results, SnapReclaimed: reclaimed}
 	}
@@ -146,9 +163,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// If the help panel is open, any key — including q — closes it.
+	// This must run before the global quit handling: q on an open
+	// panel means "close panel", not "exit the app".
+	if m.helpFor != nil {
+		m.helpFor = nil
+		return m, nil
+	}
 	switch msg.String() {
-	case "ctrl+c", "q":
+	case "ctrl+c":
 		return m, tea.Quit
+	case "q":
+		// Deletions are in flight during execute; quitting there would
+		// cut the run off with no summary or receipt. ctrl+c remains
+		// the hard escape hatch.
+		if m.phase != phaseExecute {
+			return m, tea.Quit
+		}
+		return m, nil
 	}
 	switch m.phase {
 	case phaseSelect:
@@ -177,12 +209,6 @@ func (m *Model) handleSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if msg.String() == "enter" {
 			return m, tea.Quit
 		}
-		return m, nil
-	}
-	// If the help panel is open, any key closes it. Don't let nav
-	// keys leak through and move the cursor under a hidden panel.
-	if m.helpFor != nil {
-		m.helpFor = nil
 		return m, nil
 	}
 	switch msg.String() {
@@ -230,6 +256,15 @@ func (m *Model) handleSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "enter":
+		// Nothing ticked → nothing to confirm; ignore rather than walk
+		// the user through an empty "reclaim 0 B" confirm screen.
+		if !m.anyApproved() {
+			return m, nil
+		}
+		if m.opts.SkipConfirm {
+			m.phase = phaseExecute
+			return m, m.startExecute()
+		}
 		m.phase = phaseConfirm
 	}
 	return m, nil
@@ -261,6 +296,18 @@ func (m *Model) visibleScans() []int {
 		out = append(out, i)
 	}
 	return out
+}
+
+// anyApproved reports whether at least one finding is ticked.
+func (m *Model) anyApproved() bool {
+	for _, s := range m.scanRes {
+		for _, f := range s.Findings {
+			if f.Approved {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (m *Model) selectedBytes() int64 {
@@ -305,8 +352,13 @@ func (m *Model) View() string {
 		b.WriteString(renderHelpPanel(m.helpFor))
 	}
 
-	b.WriteString("\n")
-	b.WriteString(renderFooter(m))
+	// The footer's "Will free / predicted disk" math describes the
+	// upcoming run; after execution the summary shows measured numbers
+	// and the footer would contradict them. Drop it on summary.
+	if m.phase != phaseSummary {
+		b.WriteString("\n")
+		b.WriteString(renderFooter(m))
+	}
 	return b.String()
 }
 

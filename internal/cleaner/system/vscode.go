@@ -15,7 +15,11 @@ func init() {
 			"~/Library/Application Support/Code/logs",
 		},
 		DetectAnyPath: true,
-		BusyProcs:     []string{"Code", "Code Helper"},
-		Reason:        "VS Code transient caches",
+		// VS Code's main process is named "Electron" on macOS, and the
+		// helpers are "Code Helper (Renderer)" etc. — the old exact
+		// matches "Code"/"Code Helper" never fired, so caches were
+		// deleted under a running editor.
+		BusyProcs: []string{"Electron", "Code Helper (Renderer)", "Code Helper (GPU)", "Code Helper (Plugin)"},
+		Reason:    "VS Code transient caches",
 	})
 }

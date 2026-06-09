@@ -53,5 +53,5 @@ func (tgCleaner) Scan(ctx context.Context, opts cleaner.ScanOpts) ([]cleaner.Fin
 }
 
 func (tgCleaner) Execute(ctx context.Context, findings []cleaner.Finding, opts cleaner.ExecOpts) (cleaner.Result, error) {
-	return executeStale(ctx, "terragrunt", findings, opts)
+	return executeStale(ctx, "terragrunt", ".terragrunt-cache", findings, opts)
 }

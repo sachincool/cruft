@@ -45,7 +45,7 @@ func TestExpectedCleanersAreRegistered(t *testing.T) {
 		"npm", "pnpm", "yarn", "pip", "cargo", "gomod", "gem", "gradle", "maven",
 		"terraform", "terragrunt", "pulumi",
 		"docker", "docker-volumes", "colima",
-		"homebrew", "xcode-derived", "xcode-archives", "xcode-simulators", "library-caches", "vscode", "jetbrains-caches", "jetbrains-system", "slack", "trash",
+		"homebrew", "xcode-derived", "xcode-archives", "xcode-simulators", "library-caches", "vscode", "jetbrains-caches", "slack", "trash",
 		// cleardisk-parity cache cleaners
 		"bun", "deno", "uv", "conda", "poetry", "pipenv", "cocoapods", "swiftpm", "carthage",
 		"sbt", "gradle-wrapper", "composer", "bazel", "flutter-pub", "bundler", "nvm", "pyenv", "mise",
