@@ -19,6 +19,10 @@ func init() {
 			"~/Library/Caches/com.tinyspeck.slackmacgap",
 		},
 		DetectAnyPath: true,
-		Reason:        "vetted system caches",
+		// Deleting a live Chromium/Gecko cache directory is a known
+		// corruption vector — skip while any of these apps run, same as
+		// xcode-derived does for Xcode.
+		BusyProcs: []string{"Google Chrome", "Safari", "firefox", "Spotify", "Slack"},
+		Reason:    "vetted system caches",
 	})
 }

@@ -45,6 +45,7 @@ var (
 	flagJSON         bool
 	flagSearchRoots  []string
 	flagIncludeRisky bool
+	flagReclaimSnaps bool
 
 	versionString = "0.1.0-dev"
 )
@@ -83,6 +84,15 @@ Quick start:
 		ValidArgsFunction: completeCleanerNames,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
+		// Reject --profile typos up front: profile.Parse falls back to
+		// balanced, so `--profile agressive` would otherwise silently run
+		// a different scope than the user asked for.
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+			if !profile.Valid(flagProfile) {
+				return fmt.Errorf("unknown --profile %q — use conservative, balanced, or aggressive", flagProfile)
+			}
+			return nil
+		},
 	}
 	cmd.PersistentFlags().BoolVar(&flagDryRun, "dry-run", false, "preview only — show what would happen, change nothing")
 	cmd.PersistentFlags().BoolVarP(&flagYes, "yes", "y", false, "skip the confirm prompt")
@@ -96,6 +106,7 @@ Quick start:
 	cmd.PersistentFlags().BoolVar(&flagJSON, "json", false, "machine-readable output for non-TUI subcommands")
 	cmd.PersistentFlags().StringSliceVar(&flagSearchRoots, "search-root", defaultSearchRoots(), "directories scanned for stale .terraform/ etc")
 	cmd.PersistentFlags().BoolVar(&flagIncludeRisky, "include-risky", false, "include cleaners marked risky")
+	cmd.PersistentFlags().BoolVar(&flagReclaimSnaps, "reclaim-snapshots", true, "after a live run, thin Time Machine local snapshots so deleted space actually frees (macOS)")
 
 	// Journey-ordered groups so --help reads in the order a user
 	// actually does things: explore → run → recover. Cobra defaults
@@ -135,11 +146,28 @@ func defaultTombstoneDir() string {
 func defaultSearchRoots() []string {
 	candidates := []string{"~/Projects", "~/projects", "~/code", "~/work", "~/src", "~/dev"}
 	var out []string
+	var infos []os.FileInfo
 	for _, c := range candidates {
 		p := fsutil.Expand(c)
-		if fsutil.Exists(p) {
-			out = append(out, p)
+		info, err := os.Stat(p)
+		if err != nil {
+			continue
 		}
+		// On case-insensitive APFS ~/Projects and ~/projects are the same
+		// directory; scanning both would double-count every finding and
+		// then fail the second delete. Dedupe by identity, not by name.
+		dup := false
+		for _, seen := range infos {
+			if os.SameFile(seen, info) {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+		infos = append(infos, info)
+		out = append(out, p)
 	}
 	if len(out) == 0 {
 		out = []string{fsutil.HomeDir()}
@@ -221,10 +249,16 @@ func runTUI(_ *cobra.Command, args []string) error {
 		return err
 	}
 	defer r.Close()
-	// Sweep any tombstone runs older than retention up-front.
-	_, _ = r.SweepTombstone(time.Duration(flagTombstoneDays) * 24 * time.Hour)
+	// Sweep any tombstone runs older than retention up-front. Use a
+	// standalone store, not the runner's: the runner only has one when
+	// --safe is set, and the promise "recoverable for N days" must be
+	// enforced on every launch, not just --safe ones.
+	_, _ = tombstone.New(defaultTombstoneDir()).Sweep(time.Duration(flagTombstoneDays) * 24 * time.Hour)
 
-	m := tui.NewModel(context.Background(), r, cleaners)
+	m := tui.NewModel(context.Background(), r, cleaners, tui.Options{
+		ReclaimSnapshots: flagReclaimSnaps,
+		SkipConfirm:      flagYes,
+	})
 	prog := tea.NewProgram(m, tea.WithAltScreen())
 	_, err = prog.Run()
 	return err
@@ -248,6 +282,13 @@ func cmdRun() *cobra.Command {
 					cleaners = profile.Filter(cleaner.All(), profile.Aggressive)
 				}
 			} else {
+				// Bare `cruft run` used to silently behave like `run --all`
+				// — immediate live deletion for someone who typed it
+				// expecting usage help. Make the full sweep an explicit
+				// opt-in.
+				if len(args) == 0 {
+					return fmt.Errorf("specify cleaners to run (e.g. `cruft run npm gomod`) or pass --all")
+				}
 				cleaners, err = pickCleaners(args)
 				if err != nil {
 					return err
@@ -258,22 +299,60 @@ func cmdRun() *cobra.Command {
 				return err
 			}
 			defer r.Close()
+			_, _ = tombstone.New(defaultTombstoneDir()).Sweep(time.Duration(flagTombstoneDays) * 24 * time.Hour)
 
+			// Free space before and after the run. The Total below is a
+			// sum of finding sizes (an estimate of what was removed); this
+			// pair lets the summary show the *measured* disk delta, which
+			// can be far smaller — e.g. Docker's sparse VM image doesn't
+			// shrink on prune, and APFS/Time Machine snapshots can pin
+			// freed blocks until they're thinned.
+			beforeFS := fsutil.FreeBytes("/")
 			scans, err := r.Scan(ctx, cleaners, nil)
 			if err != nil {
 				return err
 			}
 			results := r.Execute(ctx, scans, nil)
+			afterFS := fsutil.FreeBytes("/")
+
+			// Reclaim snapshot-pinned space in the same run. Deletions can
+			// "succeed" yet leave free space unchanged because Time Machine
+			// local snapshots still reference the removed blocks. The thin
+			// target is bounded by what this run freed, so older restore
+			// points survive.
+			var snapReclaimed int64
+			if flagReclaimSnaps && !flagDryRun {
+				var freed int64
+				for _, x := range results {
+					freed += x.Result.BytesFreed
+				}
+				snapReclaimed = fsutil.ReclaimLocalSnapshots(ctx, "/", freed)
+				if snapReclaimed > 0 {
+					afterFS = fsutil.FreeBytes("/")
+				}
+			}
 
 			if flagJSON {
-				return json.NewEncoder(os.Stdout).Encode(runJSONOutput{
-					RunID:     r.RunID(),
-					AuditLog:  r.AuditPath(),
-					Tombstone: r.TombstoneRoot(),
-					Results:   resultsToJSON(results),
-				})
+				if err := json.NewEncoder(os.Stdout).Encode(runJSONOutput{
+					RunID:              r.RunID(),
+					AuditLog:           r.AuditPath(),
+					Tombstone:          r.TombstoneRoot(),
+					FreeBefore:         beforeFS,
+					FreeAfter:          afterFS,
+					ActualFreed:        afterFS - beforeFS,
+					SnapshotsReclaimed: snapReclaimed,
+					Results:            resultsToJSON(results),
+				}); err != nil {
+					return err
+				}
+				return failuresAsError(results)
 			}
-			return printSummary(results, r)
+			if err := printSummary(results, r, beforeFS, afterFS, snapReclaimed); err != nil {
+				return err
+			}
+			// Scripted callers need the exit code to reflect failed
+			// deletions; the summary alone is invisible to a script.
+			return failuresAsError(results)
 		},
 	}
 	c.Flags().BoolVar(&all, "all", false, "run all non-risky cleaners (per --profile)")
@@ -529,6 +608,19 @@ func cmdVersion() *cobra.Command {
 	}
 }
 
+// failuresAsError converts failed deletions into a non-nil error so the
+// process exits 1 when any approved finding could not be cleaned.
+func failuresAsError(results []runner.ExecResult) error {
+	var failed int
+	for _, x := range results {
+		failed += x.Result.Failed
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d deletion(s) failed — see the summary above or the audit log", failed)
+	}
+	return nil
+}
+
 // ---- output helpers ----
 
 type listRow struct {
@@ -538,10 +630,14 @@ type listRow struct {
 }
 
 type runJSONOutput struct {
-	RunID     string          `json:"run_id"`
-	AuditLog  string          `json:"audit_log"`
-	Tombstone string          `json:"tombstone"`
-	Results   []runResultJSON `json:"results"`
+	RunID              string          `json:"run_id"`
+	AuditLog           string          `json:"audit_log"`
+	Tombstone          string          `json:"tombstone"`
+	FreeBefore         int64           `json:"free_before_bytes"`
+	FreeAfter          int64           `json:"free_after_bytes"`
+	ActualFreed        int64           `json:"actual_freed_bytes"`
+	SnapshotsReclaimed int64           `json:"snapshots_reclaimed_bytes,omitempty"`
+	Results            []runResultJSON `json:"results"`
 }
 
 type runResultJSON struct {
@@ -578,7 +674,7 @@ func resultsToJSON(rs []runner.ExecResult) []runResultJSON {
 	return out
 }
 
-func printSummary(results []runner.ExecResult, r *runner.Runner) error {
+func printSummary(results []runner.ExecResult, r *runner.Runner, beforeFS, afterFS, snapReclaimed int64) error {
 	type riskyOffer struct {
 		name   string
 		reason string
@@ -639,15 +735,25 @@ func printSummary(results []runner.ExecResult, r *runner.Runner) error {
 		if x.NotInstalled || x.BusyProcess != "" {
 			continue
 		}
-		if x.Result.Findings == 0 {
+		// Keep rows that did no work but were skipped or errored (e.g.
+		// budget exhausted) — selected items must not vanish from the
+		// receipt.
+		if x.Result.Findings == 0 && x.Result.Skipped == 0 && len(x.Result.Errors) == 0 {
 			continue
 		}
 		marker := tui.StyleAccent.Render("✓")
-		if x.Result.Failed > 0 {
+		failedRow := x.Result.Failed > 0 || (x.Result.Succeeded == 0 && len(x.Result.Errors) > 0)
+		switch {
+		case failedRow:
 			marker = tui.StyleDanger.Render("✗")
+		case x.Result.Skipped > 0 && x.Result.Succeeded == 0:
+			marker = tui.StyleMuted.Render("⏸")
 		}
 		fmt.Printf("  %s %-22s %s\n", marker, x.Cleaner.Name(),
 			tui.StyleAccent.Render(tui.HumanBytes(x.Result.BytesFreed)))
+		if failedRow && len(x.Result.Errors) > 0 {
+			fmt.Println(tui.StyleMuted.Render("      ↳ " + x.Result.Errors[0].Error()))
+		}
 	}
 
 	// Risky-but-unapproved findings: scanned, found stuff, but not
@@ -690,7 +796,53 @@ func printSummary(results []runner.ExecResult, r *runner.Runner) error {
 	}
 
 	fmt.Println()
-	fmt.Printf("Total: %s\n", tui.StyleAccent.Render(tui.HumanBytes(totalFreed)))
+	fmt.Printf("Total: %s %s\n",
+		tui.StyleAccent.Render(tui.HumanBytes(totalFreed)),
+		tui.StyleMuted.Render("(sum of what was removed)"),
+	)
+
+	// Measured disk delta — the honest "what actually changed on the
+	// volume" number, from statfs before-scan vs after-execute. In a
+	// live run this is what the user should trust: the Total above is a
+	// sum of file sizes, but freed bytes can stay claimed by APFS / Time
+	// Machine local snapshots, and Docker's prune never shrinks its
+	// sparse VM image. When the two diverge, this line shows it instead
+	// of hiding it behind an optimistic headline.
+	if beforeFS > 0 && afterFS > 0 {
+		if r.IsDryRun() {
+			predicted := beforeFS + totalFreed
+			fmt.Printf("Disk free: %s → %s   %s\n",
+				tui.HumanBytes(beforeFS),
+				tui.StyleAccent.Render(tui.HumanBytes(predicted)),
+				tui.StyleMuted.Render("("+tui.HumanBytes(totalFreed)+" would be freed)"),
+			)
+		} else {
+			freed := max(afterFS-beforeFS, 0)
+			fmt.Printf("Disk free: %s → %s   %s\n",
+				tui.HumanBytes(beforeFS),
+				tui.StyleAccent.Render(tui.HumanBytes(afterFS)),
+				tui.StyleAccent.Render("("+tui.HumanBytes(freed)+" actually freed)"),
+			)
+			if snapReclaimed > 0 {
+				fmt.Println(tui.StyleMuted.Render(
+					"   incl. " + tui.HumanBytes(snapReclaimed) +
+						" recovered by thinning Time Machine local snapshots",
+				))
+			}
+			// Loud, only when it still matters after the snapshot thin:
+			// deletions "succeeded" but the volume barely moved. The usual
+			// remaining cause on a dev box is Docker — prune reports space
+			// reclaimed but never shrinks its sparse VM image on macOS.
+			if totalFreed >= 1<<30 && freed < totalFreed/2 {
+				fmt.Println(tui.StyleWarn.Render(
+					"⚠  still less freed than removed — likely Docker's sparse image (prune doesn't shrink it)",
+				))
+				fmt.Println(tui.StyleMuted.Render(
+					"   or snapshots pinned by an active backup. Check: `tmutil listlocalsnapshots /`",
+				))
+			}
+		}
+	}
 	if p := r.AuditPath(); p != "" {
 		fmt.Println(tui.StyleMuted.Render("Audit log: " + p))
 	}

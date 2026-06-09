@@ -67,7 +67,10 @@ func Size(ctx context.Context, path string, sampleN int) (SizeResult, error) {
 		}
 		return nil
 	})
-	if err != nil && err != ctx.Err() {
+	// WalkDir only surfaces the context error here (walk errors are
+	// swallowed above). A cancelled walk must not return its partial
+	// total as a legitimate size.
+	if err != nil {
 		return SizeResult{}, err
 	}
 
@@ -90,6 +93,7 @@ func Size(ctx context.Context, path string, sampleN int) (SizeResult, error) {
 	sem := make(chan struct{}, 8)
 	for _, e := range entries {
 		if err := ctx.Err(); err != nil {
+			wg.Wait() // don't leak walker goroutines past cancellation
 			return res, err
 		}
 		e := e

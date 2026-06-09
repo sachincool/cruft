@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -49,6 +50,18 @@ func (s *Store) Bury(runID, cleaner, src string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(dst), dirPerm); err != nil {
 		return "", fmt.Errorf("tombstone: mkdir dst: %w", err)
 	}
+	// Write the manifest entry before moving anything: if the move then
+	// fails the entry is merely stale (Restore skips entries whose Src
+	// still exists), whereas a manifest failure after the move would
+	// strand the data in the tombstone with no record of it.
+	if err := s.appendManifest(runID, manifestEntry{
+		Buried:  time.Now(),
+		Cleaner: cleaner,
+		Src:     abs,
+		Dst:     dst,
+	}); err != nil {
+		return "", fmt.Errorf("tombstone: manifest write failed: %w", err)
+	}
 	if err := os.Rename(abs, dst); err != nil {
 		// Cross-device or other; try a recursive copy.
 		if cerr := copyTree(abs, dst); cerr != nil {
@@ -57,16 +70,6 @@ func (s *Store) Bury(runID, cleaner, src string) (string, error) {
 		if cerr := os.RemoveAll(abs); cerr != nil {
 			return "", fmt.Errorf("tombstone: copied but couldn't remove src: %w", cerr)
 		}
-	}
-	if err := s.appendManifest(runID, manifestEntry{
-		Buried:  time.Now(),
-		Cleaner: cleaner,
-		Src:     abs,
-		Dst:     dst,
-	}); err != nil {
-		// Manifest is for restore; if we lose it the file is still safe
-		// in tombstone, just not user-restorable. Log via error return.
-		return dst, fmt.Errorf("tombstone: appended file but manifest write failed: %w", err)
 	}
 	return dst, nil
 }
@@ -225,23 +228,14 @@ func copyFile(src, dst string, info os.FileInfo) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-	buf := make([]byte, 64*1024)
-	for {
-		n, rerr := in.Read(buf)
-		if n > 0 {
-			if _, werr := out.Write(buf[:n]); werr != nil {
-				return werr
-			}
-		}
-		if rerr != nil {
-			if errors.Is(rerr, fs.ErrClosed) || rerr.Error() == "EOF" {
-				return nil
-			}
-			break
-		}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
 	}
-	return nil
+	// Close errors matter here: a short write surfacing at close time
+	// means the tombstone copy is incomplete and the source must not
+	// be deleted.
+	return out.Close()
 }
 
 func dirStats(path string) (int64, int) {

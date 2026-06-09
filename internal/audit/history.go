@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/sachincool/cruft/internal/cleaner"
 )
@@ -44,6 +45,12 @@ func History(dir string) ([]RunSummary, error) {
 		if err != nil {
 			continue
 		}
+		// Zero-entry files are aborted invocations (TUI opened and quit
+		// at the picker); listing them buries real runs in `history`
+		// and makes `cruft last` report a run where nothing happened.
+		if s.Entries == 0 {
+			continue
+		}
 		s.RunID = strings.TrimSuffix(e.Name(), ".jsonl")
 		s.Path = path
 		summaries = append(summaries, s)
@@ -60,6 +67,11 @@ func summarise(path string) (RunSummary, error) {
 	defer f.Close()
 	out := RunSummary{PerCleaner: map[string]int64{}}
 	dec := json.NewDecoder(f)
+	// Compare as time.Time, not formatted strings: entries can carry
+	// different UTC offsets (DST flip mid-run, travel), and lexical
+	// comparison orders "01:00:00+05:30" after "22:00:00Z" despite it
+	// being hours earlier.
+	var first, last time.Time
 	for dec.More() {
 		var e cleaner.AuditEntry
 		if err := dec.Decode(&e); err != nil {
@@ -73,16 +85,19 @@ func summarise(path string) (RunSummary, error) {
 		} else {
 			out.Failures++
 		}
-		ts := e.Timestamp.Format("2006-01-02T15:04:05Z07:00")
-		if out.FirstAction == "" || ts < out.FirstAction {
-			out.FirstAction = ts
+		if first.IsZero() || e.Timestamp.Before(first) {
+			first = e.Timestamp
 		}
-		if ts > out.LastAction {
-			out.LastAction = ts
+		if e.Timestamp.After(last) {
+			last = e.Timestamp
 		}
 		if e.DryRun {
 			out.DryRun = true
 		}
+	}
+	if !first.IsZero() {
+		out.FirstAction = first.UTC().Format(time.RFC3339)
+		out.LastAction = last.UTC().Format(time.RFC3339)
 	}
 	return out, nil
 }

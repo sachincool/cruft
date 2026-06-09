@@ -2,7 +2,11 @@
 // balanced, aggressive) that filter the registered cleaners.
 package profile
 
-import "github.com/sachincool/cruft/internal/cleaner"
+import (
+	"strings"
+
+	"github.com/sachincool/cruft/internal/cleaner"
+)
 
 type Profile string
 
@@ -12,13 +16,25 @@ const (
 	Aggressive   Profile = "aggressive"
 )
 
-// Parse returns the named profile, or Balanced if name is empty / unrecognised.
+// Parse returns the named profile (case-insensitively), or Balanced if
+// name is empty / unrecognised. Callers that want to reject typos
+// instead of silently degrading should check Valid first.
 func Parse(name string) Profile {
-	switch Profile(name) {
+	switch p := Profile(strings.ToLower(name)); p {
 	case Conservative, Aggressive:
-		return Profile(name)
+		return p
 	}
 	return Balanced
+}
+
+// Valid reports whether name is a recognised profile. "" is valid (it
+// means "use the default").
+func Valid(name string) bool {
+	switch Profile(strings.ToLower(name)) {
+	case "", Conservative, Balanced, Aggressive:
+		return true
+	}
+	return false
 }
 
 // fastRegenerate names cleaners whose post-cleanup cost is genuinely
@@ -39,7 +55,7 @@ var fastRegenerate = map[string]bool{
 	"homebrew":         true,
 	"xcode-simulators": true, // delete unavailable only; no rebuild cost
 	"vscode":           true,
-	"jetbrains-caches": true, // caches dir only; indexes live in jetbrains-system
+	"jetbrains-caches": true, // caches + indexes; regenerate on next IDE open
 	"slack":            true,
 	// pure re-download caches with no project rebuild
 	"bun":      true,

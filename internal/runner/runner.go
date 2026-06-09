@@ -75,7 +75,9 @@ func New(opts Options) (*Runner, error) {
 	if opts.SamplePaths <= 0 {
 		opts.SamplePaths = 5
 	}
-	runID := time.Now().UTC().Format("20060102T150405Z")
+	// Millisecond precision: two invocations in the same second must not
+	// share an audit file or tombstone run dir.
+	runID := time.Now().UTC().Format("20060102T150405.000Z")
 	r := &Runner{
 		opts:   opts,
 		runID:  runID,
@@ -189,16 +191,25 @@ func (r *Runner) Scan(ctx context.Context, cleaners []cleaner.Cleaner, progress 
 	return results, nil
 }
 
-// Execute runs each cleaner's approved findings in parallel.
-// The runner enforces a single-flight per cleaner Name() — useful for
-// shell-out cleaners like `brew cleanup` that can't run concurrently
-// with themselves.
+// Execute runs each cleaner's approved findings in parallel. Each
+// cleaner appears at most once in scans (registry names are unique), so
+// no cleaner ever runs concurrently with itself.
+//
+// When a byte budget is set, execution is serialised: the budget is
+// checked as each job starts, and with N jobs running in parallel all
+// N would pass the check before any of them records freed bytes —
+// overshooting a "stop once this much is reclaimed" cap by up to N
+// full cleaners.
 func (r *Runner) Execute(ctx context.Context, scans []ScanResult, progress func(ExecResult)) []ExecResult {
 	results := make([]ExecResult, len(scans))
 	for i, s := range scans {
 		results[i].ScanResult = s
 	}
-	pool := NewPool(r.opts.MaxParallel)
+	parallel := r.opts.MaxParallel
+	if r.budget.Limited() {
+		parallel = 1
+	}
+	pool := NewPool(parallel)
 	var mu sync.Mutex
 
 	// Filter scans down to those with at least one approved finding.

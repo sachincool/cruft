@@ -90,12 +90,11 @@ Legend  ready = safe to clean  ·  in use = skipped (a process is running)
   terragrunt              not installed
   docker                  ready
   docker-volumes          ready risky · anonymous volumes often hold db/state
-  colima                  in use (colima)
+  colima                  ready
   homebrew                ready
   library-caches          ready
-  vscode                  in use (Code)
+  vscode                  in use (Electron)
   jetbrains-caches        ready
-  jetbrains-system        ready risky · forces multi-minute project re-index
   xcode-derived           ready
   xcode-archives          ready risky · may be needed for App Store submissions
   xcode-simulators        ready

@@ -107,6 +107,18 @@ func (artifactsCleaner) Execute(ctx context.Context, findings []cleaner.Finding,
 			res.BytesFreed += f.Bytes
 			continue
 		}
+		// Execute-time re-check: only directories named like a known
+		// artifact kind may be removed, whatever the finding says. The
+		// symlink case is handled inside SafeRemove (the final path
+		// element is never followed).
+		if !isArtifactDirName(filepath.Base(f.Path)) {
+			err := fmt.Errorf("refused: %s is not a known artifact directory", f.Path)
+			res.Failed++
+			res.Errors = append(res.Errors, err)
+			entry.Error = err.Error()
+			opts.AuditLog.Record(entry)
+			continue
+		}
 		if opts.UseTombstone && opts.Tombstone != "" {
 			store := tombstone.New(filepath.Dir(opts.Tombstone))
 			if _, err := store.Bury(filepath.Base(opts.Tombstone), name, f.Path); err != nil {
@@ -132,6 +144,17 @@ func (artifactsCleaner) Execute(ctx context.Context, findings []cleaner.Finding,
 		res.BytesFreed += f.Bytes
 	}
 	return res, nil
+}
+
+// isArtifactDirName reports whether base is one of the build-output
+// directory names this cleaner is allowed to remove.
+func isArtifactDirName(base string) bool {
+	for _, k := range kinds {
+		if k.dir == base {
+			return true
+		}
+	}
+	return false
 }
 
 // defaultSearchRoots mirrors the IaC cleaners' default project locations.

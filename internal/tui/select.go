@@ -80,15 +80,19 @@ func renderSelect(m *Model) string {
 		}
 	}
 
-	// Show ignored cleaners as a fold-line.
+	// Show ignored cleaners as a fold-line. Errored scans get their own
+	// bucket — before this they matched no bucket and simply vanished.
 	var skippedBusy, notInstalled, emptyScans int
+	var errored []string
 	for _, s := range m.scanRes {
 		switch {
 		case s.NotInstalled:
 			notInstalled++
 		case s.BusyProcess != "":
 			skippedBusy++
-		case len(s.Findings) == 0 && s.Err == nil:
+		case s.Err != nil && len(s.Findings) == 0:
+			errored = append(errored, s.Cleaner.Name())
+		case len(s.Findings) == 0:
 			emptyScans++
 		}
 	}
@@ -97,6 +101,12 @@ func renderSelect(m *Model) string {
 		"·  %d not installed   ·  %d already clean   ·  %d skipped (in use)",
 		notInstalled, emptyScans, skippedBusy,
 	)))
+	if len(errored) > 0 {
+		b.WriteString("\n")
+		b.WriteString(StyleWarn.Render(fmt.Sprintf(
+			"⚠  %d scan failed: %s", len(errored), strings.Join(errored, ", "),
+		)))
+	}
 	return b.String()
 }
 

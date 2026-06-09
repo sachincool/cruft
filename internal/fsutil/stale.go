@@ -67,8 +67,19 @@ func FindStaleDirs(
 			name := d.Name()
 			if name == dirName {
 				project := filepath.Dir(p)
-				newest := newestMarker(project, projectMarkerExts, dirName)
-				if !newest.IsZero() && newest.Before(threshold) {
+				// The marker gates "is this really a <kind> project";
+				// without one we refuse to touch the directory at all.
+				marker := newestMarker(project, projectMarkerExts, dirName)
+				if marker.IsZero() {
+					return filepath.SkipDir
+				}
+				// Staleness must reflect real activity anywhere in the
+				// project tree, not just the root markers: a project edited
+				// daily under src/ can have a package.json untouched for
+				// months, and deleting its node_modules would hit an
+				// actively developed project.
+				newest := newestActivity(ctx, project, dirName, threshold, marker)
+				if newest.Before(threshold) {
 					age := int(time.Since(newest).Hours() / 24)
 					out = append(out, StaleDir{
 						Path:             p,
@@ -95,6 +106,54 @@ func FindStaleDirs(
 		}
 	}
 	return out, nil
+}
+
+// newestActivity returns the newest modtime of any regular file in the
+// project tree, excluding the artifact dir being judged, other build/
+// vendor output, and hidden dirs. It short-circuits as soon as it sees
+// a file newer than threshold — for active projects (the common case
+// that must NOT be deleted) this exits on the first recent file, so the
+// walk stays cheap. Starts from seed (the marker mtime) so the result
+// is never older than what the markers already prove.
+func newestActivity(ctx context.Context, projectDir, ignoreDir string, threshold, seed time.Time) time.Time {
+	newest := seed
+	skipDirs := map[string]bool{
+		"node_modules": true, ".git": true, "vendor": true,
+		"target": true, "build": true, "dist": true, "Pods": true,
+	}
+	_ = filepath.WalkDir(projectDir, func(p string, d fs.DirEntry, werr error) error {
+		if werr != nil {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if d.IsDir() {
+			name := d.Name()
+			if p == projectDir {
+				return nil
+			}
+			if name == ignoreDir || skipDirs[name] || strings.HasPrefix(name, ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		fi, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		if fi.ModTime().After(newest) {
+			newest = fi.ModTime()
+			if newest.After(threshold) {
+				return filepath.SkipAll // project is active; stop walking
+			}
+		}
+		return nil
+	})
+	return newest
 }
 
 // newestMarker returns the latest modtime among project-marker files

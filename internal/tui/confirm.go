@@ -31,8 +31,14 @@ func renderConfirm(m *Model) string {
 	if path := m.runner.AuditPath(); path != "" {
 		b.WriteString(StyleMuted.Render("Audit log: "+path) + "\n")
 	}
-	if root := m.runner.TombstoneRoot(); root != "" && !dry {
-		b.WriteString(StyleMuted.Render("Tombstone:  "+root+"  (restore with `cruft restore`)") + "\n")
+	// Gate on UsesTombstone, not TombstoneRoot: the root stays set after
+	// safe-mode is toggled off, and promising `cruft restore` next to a
+	// "PERMANENTLY DELETED" banner would be a lie.
+	if m.runner.UsesTombstone() && !dry {
+		b.WriteString(StyleMuted.Render("Tombstone:  "+m.runner.TombstoneRoot()+"  (restore with `cruft restore`)") + "\n")
+	}
+	if m.opts.ReclaimSnapshots && !dry {
+		b.WriteString(StyleMuted.Render("Time Machine local snapshots will be thinned to release the freed space.") + "\n")
 	}
 	b.WriteString("\n")
 	b.WriteString(StyleTitle.Render("[y] confirm   [n] back"))
