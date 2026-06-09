@@ -277,22 +277,14 @@ func cmdRun() *cobra.Command {
 
 			// Reclaim snapshot-pinned space in the same run. Deletions can
 			// "succeed" yet leave free space unchanged because Time Machine
-			// local snapshots still reference the removed blocks. When that
-			// gap shows up after a live run, thin just enough snapshots to
-			// recover what we deleted, then re-measure.
+			// local snapshots still reference the removed blocks. After any
+			// live run, hand that space back to the OS — this also recovers
+			// space pinned by deletions from earlier runs.
 			var snapReclaimed int64
 			if flagReclaimSnaps && !flagDryRun {
-				var removed int64
-				for _, x := range results {
-					removed += x.Result.BytesFreed
-				}
-				if removed >= 1<<30 && (afterFS-beforeFS) < removed &&
-					fsutil.HasLocalSnapshots(ctx, "/") {
-					target := removed - max(afterFS-beforeFS, 0)
-					_ = fsutil.ThinLocalSnapshots(ctx, "/", target)
-					reAfter := fsutil.FreeBytes("/")
-					snapReclaimed = max(reAfter-afterFS, 0)
-					afterFS = reAfter
+				snapReclaimed = fsutil.ReclaimLocalSnapshots(ctx, "/")
+				if snapReclaimed > 0 {
+					afterFS = fsutil.FreeBytes("/")
 				}
 			}
 

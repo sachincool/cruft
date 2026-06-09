@@ -68,6 +68,13 @@ func renderSummary(m *Model) string {
 		StyleAccent.Render(HumanBytes(deltaDisplay)),
 		deltaWord,
 	))
+	if m.snapReclaimed > 0 {
+		b.WriteString(StyleMuted.Render(
+			"   incl. " + HumanBytes(m.snapReclaimed) +
+				" recovered by thinning Time Machine local snapshots",
+		))
+		b.WriteString("\n")
+	}
 
 	if path := m.runner.AuditPath(); path != "" {
 		b.WriteString("\n")

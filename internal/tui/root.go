@@ -24,19 +24,22 @@ const (
 
 // Model is the bubbletea root model.
 type Model struct {
-	ctx       context.Context
-	runner    *runner.Runner
-	cleaners  []cleaner.Cleaner
-	phase     phase
-	scanRes   []runner.ScanResult
-	execRes   []runner.ExecResult
-	cursor    int
-	beforeFS  int64
-	afterFS   int64
-	width     int
-	height    int
-	scanDone  int
-	scanTotal int
+	ctx      context.Context
+	runner   *runner.Runner
+	cleaners []cleaner.Cleaner
+	phase    phase
+	scanRes  []runner.ScanResult
+	execRes  []runner.ExecResult
+	cursor   int
+	beforeFS int64
+	afterFS  int64
+	// snapReclaimed is free space recovered by thinning Time Machine
+	// local snapshots after a live run (bytes); 0 when none / dry-run.
+	snapReclaimed int64
+	width         int
+	height        int
+	scanDone      int
+	scanTotal     int
 	// Live-scan plumbing: cleaners stream their results back over scanCh
 	// as they finish. scanIdx maps a cleaner name to its stable slot in
 	// scanRes so the select view keeps a deterministic order.
@@ -99,7 +102,14 @@ func waitForScan(ch chan runner.ScanResult) tea.Cmd {
 func (m *Model) startExecute() tea.Cmd {
 	return func() tea.Msg {
 		results := m.runner.Execute(m.ctx, m.scanRes, nil)
-		return execCompleteMsg{Results: results}
+		// Reclaim snapshot-pinned space here, on the command goroutine,
+		// so the blocking tmutil call never stalls the UI loop. Skipped
+		// in dry-run (nothing was deleted to reclaim).
+		var reclaimed int64
+		if !m.runner.IsDryRun() {
+			reclaimed = fsutil.ReclaimLocalSnapshots(m.ctx, "/")
+		}
+		return execCompleteMsg{Results: results, SnapReclaimed: reclaimed}
 	}
 }
 
@@ -124,6 +134,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case execCompleteMsg:
 		m.execRes = msg.Results
+		m.snapReclaimed = msg.SnapReclaimed
 		m.afterFS = fsutil.FreeBytes("/")
 		m.phase = phaseSummary
 		return m, nil
