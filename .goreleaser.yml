@@ -71,9 +71,15 @@ homebrew_casks:
     # install. Drop this hook if/when the binary gets signed + notarized.
     hooks:
       post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/cruft"]
+        # `install:` (raw Ruby) is deprecated by GoReleaser and renders the
+        # `postflight` stanza, which Homebrew 7 deprecated in turn. Use
+        # `install_steps:` (GoReleaser >= v2.19) so the cask gets
+        # `postflight_steps` and its DSL: `run` instead of `system_command`,
+        # `on_macos do` instead of `if OS.mac?`, and the `{{ .StagedPath }}`
+        # template instead of Ruby's `#{staged_path}` interpolation.
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/cruft"]
           end
     caveats: |
       cruft is macOS-only for now.
